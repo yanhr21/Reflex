@@ -27,6 +27,25 @@
       the full v7_733 SFT from the frozen 733-row condition root using the
       enforced fix1 action recipe. Do not use the rejected `normactive_clip1`
       recipe or any chunked/93-frame/128-frame path.
+- [x] Code/docs were committed and pushed to `yanhr21/Reflex` branch `main` as
+      commit `1bd4691`. Large local artifacts are ignored by `.gitignore` and
+      were not committed.
+- [x] Full v7_733 SFT restarted with the enforced fix1 recipe at
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+      It runs in tmux `cosmos3_sft_v7_733_full_fix1recipe_4gpu_126210` on
+      Slurm step `126210.41` (`server56`, `4xH200`). The launch manifest
+      reports `fix1_action_recipe_check=passed`, `lr=1.0e-4`,
+      `action_loss_weight=2.0`, `independent_action_schedule=true`, and
+      `shift_action=1`.
+- [x] Startup sanity: training reached `Starting training...`, iter0 validation
+      loss was `3.606580`, and rank-0 iteration 7 loss was `3.0716` with
+      finite vision/action losses.
+- [x] Iter300 strict eval watcher is active in fresh auxiliary allocation
+      `127120` on `server40`, step `127120.0`, waiting for
+      `iter_000000300` and configured for 10 generated validation samples.
+- [ ] Continue monitoring through the iter300 checkpoint/eval/readout gate.
+      Do not start controller/DP integration until generated videos, action
+      metrics, readout metrics, and visual review pass.
 - [x] Stop the rejected 128-action / 129-frame chunked SFT job and its waiting
       action-eval/readout watcher sessions.
 - [x] Move old method results, old evidence conclusions, and old logs out of
@@ -702,12 +721,11 @@
       Moved `93` old process directories and `84` scattered logs/lists to
       `/public/home/yanhongru/ICLR2027/archived/reflex_cosmos3_process_artifacts_after_fix3_v7_733_sft_20260612`.
       Nothing was deleted.
-- [ ] Current active SFT monitor is ready to advance from the two-sample
-      overfit gate to full v7_733 SFT. The rejected `normactive_clip1`
-      full-data run is historical negative evidence. The overfit checkpoint
-      `iter_000000100` passed strict artifact inspection and user visual
-      approval. Controller/DP integration still remains gated until the new
-      full-data SFT checkpoints pass strict generated-video/action/readout and
+- [ ] Current active SFT monitor is the full v7_733 fix1-recipe run
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+      The rejected `normactive_clip1` full-data run is historical negative
+      evidence. Controller/DP integration remains gated until the new
+      full-data checkpoints pass strict generated-video/action/readout and
       visual review.
 - [ ] Future closed-loop work must follow
       `TODO/cosmos3_300f_world_model/08_receding_closed_loop.md`: no one-shot

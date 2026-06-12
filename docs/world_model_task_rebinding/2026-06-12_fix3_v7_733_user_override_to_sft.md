@@ -613,3 +613,38 @@ Boundary:
   v7_733 SFT using the enforced fix1 action recipe as the default. Controller
   work remains gated until full-data checkpoints pass strict generated-video,
   action/readout, and visual review.
+
+2026-06-12 19:30 CST full-data SFT restart:
+
+- Code, plans, TODOs, and documentation were committed and pushed to
+  `https://github.com/yanhr21/Reflex` on branch `main` as commit `1bd4691`
+  (`Set Cosmos3 full-episode WAM training defaults`). The commit intentionally
+  excludes local environments, `data/`, `experiments/`, `checkpoints/`,
+  `logs/`, third-party checkouts, videos, images, H5 files, NumPy arrays, and
+  model checkpoint binaries.
+- The full v7_733 SFT was restarted from the frozen 733-row full-episode WAM
+  condition root using the enforced fix1 recipe. Output root:
+  `/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+  It runs in tmux session
+  `cosmos3_sft_v7_733_full_fix1recipe_4gpu_126210` on Slurm step `126210.41`
+  (`server56`, `4xH200`).
+- The first launch attempt at `20260612_191630` did not start training because
+  the requested step memory/CPU exceeded the held allocation (`480G/64 CPU`
+  requested versus `256G/32 CPU` available). The corrected launch uses
+  `--mem=240G --cpus-per-task=32 --gres=gpu:4` within the same held allocation.
+- Startup evidence: the manifest reports `fix1_action_recipe_check=passed`,
+  `optimizer_lr=1.0e-4`, `action_loss_weight=2.0`,
+  `normalize_loss_by_active=true`, `independent_action_schedule=true`,
+  `shift_action=1`, `301` RGB/state frames, and `300` action/state rows.
+  The optimizer selected `410` tensors / `6,982,401,216` elements at
+  `lr=0.0001`.
+- Training reached `Starting training...` at `19:20:30 CST`. Iter0 validation
+  loss was `3.606580`; by rank-0 iteration 7 the loss was `3.0716` with
+  `vision=0.0514` and `action=1.5101`. After the first validation step,
+  iteration speed is about `17.3s`.
+- The previous auxiliary allocation `126985` was cancelled by Slurm after the
+  first watcher started; no `scancel` was used by the agent. A fresh tmux-held
+  1-H200 auxiliary allocation `127120` was acquired on `server40`, and step
+  `127120.0` is waiting for `iter_000000300` with strict eval settings
+  (`N_EVAL_SAMPLES=10`, full `301/300` contract). Watch log:
+  `/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter_000000300_watch_aux_realloc.log`.

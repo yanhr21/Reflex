@@ -52,6 +52,25 @@
       `normactive_clip1` recipe. After startup, monitor validation loss and
       launch strict generated-video/action/readout/visual gates at saved
       checkpoints before any controller/DP integration.
+- [x] Full-data v7_733 SFT was restarted at
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+      It runs in tmux `cosmos3_sft_v7_733_full_fix1recipe_4gpu_126210` on
+      Slurm step `126210.41` (`server56`, `4xH200`). The first attempt failed
+      before training because it requested more memory/CPU than the held
+      allocation had; the successful launch uses `240G/32CPU` inside the same
+      allocation.
+- [x] Startup checks passed: `fix1_action_recipe_check=passed`, `410` selected
+      trainable tensors, optimizer `lr=0.0001`, `action_loss_weight=2.0`,
+      `independent_action_schedule=true`, and `shift_action=1`. Training
+      reached `Starting training...`; iter0 validation loss is `3.606580`, and
+      early rank-0 losses are finite (`3.0716` at iteration 7).
+- [x] Iter300 strict generated-eval watcher is active in tmux
+      `cosmos3_v7_733_full_eval_aux_request_0612` on fresh auxiliary Slurm job
+      `127120`, step `127120.0` (`server40`, `1xH200`), after old auxiliary job
+      `126985` was cancelled by Slurm. No `scancel` was used by the agent.
+- [ ] Inspect iter300 strict generated videos/action metrics/readout and visual
+      sheets before deciding whether to continue to iter600/900/1200/1500 or
+      debug the SFT/eval path.
 - [x] Historical entry superseded: the rejected follow-up run was:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
       It uses the frozen user-override `733`-row v7 DP source and the existing
