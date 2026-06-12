@@ -84,10 +84,14 @@
       the per-sheet verdict, and
       `eval_full_episode_wam_iter_000001500/closed_loop_gate_visual_review.json`
       records `closed_loop_allowed=false`.
-- [x] Iter1800 watchers are active and read-only: tmux
+- [x] Iter1800 main watcher remains active and read-only: tmux
       `cosmos3_v7_733_iter1800_watch_0613` on job `127288` waits for the main
-      10-sample gate, and tmux `cosmos3_v7_733_iter1800_extra30_2gpu_0613` on
-      job `127286` waits for the two-GPU extra30 panel.
+      10-sample gate. The earlier extra30 watcher on job `127286` was stopped
+      by interrupting the foreground tmux/srun command, not by `scancel`, so
+      the 2-H200 allocation stayed alive. That 2-H200 allocation now runs tmux
+      `cosmos3_v7_733_resume2_fallback_to2100_0613` as a no-concurrent-writer
+      fallback: it only starts SFT if the 4-H200 writer job `127281`
+      disappears before `iter_000002100`.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

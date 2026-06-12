@@ -316,7 +316,7 @@ object appearance but do not preserve the final robot/peg/hole relative
 geometry needed for DP resume. This extra panel is diagnostic only and does
 not override the failed main visual gate.
 
-## Iteration 1800 Watchers
+## Iteration 1800 Watchers And Two-GPU Fallback
 
 Two read-only watchers were started for the next checkpoint:
 
@@ -326,11 +326,22 @@ Two read-only watchers were started for the next checkpoint:
 - Extra panel: tmux `cosmos3_v7_733_iter1800_extra30_2gpu_0613`, Slurm job
   `127286`, target checkpoint `iter_000001800`, output root
   `eval_full_episode_wam_iter_000001800_extra30_2gpu_20260613`, `30` samples.
+  This optional panel was later stopped by interrupting the foreground
+  tmux/srun command, not by `scancel`, to preserve the allocation for training
+  continuation insurance.
 
-Both watchers run inside compute-node Slurm steps, wait for a stable checkpoint,
-run strict full-episode eval, generated-RGB readout, failure profiling, and a
-pre-visual closed-loop gate. They are read-only paths and must not be confused
-with a second SFT training writer.
+The main watcher runs inside a compute-node Slurm step, waits for a stable
+checkpoint, runs strict full-episode eval, generated-RGB readout, failure
+profiling, and a pre-visual closed-loop gate. It is a read-only path and must
+not be confused with a second SFT training writer.
+
+At `2026-06-13T06:31:55+08:00`, job `127286` on `server40` had only its
+`extern` step left and was reassigned to tmux
+`cosmos3_v7_733_resume2_fallback_to2100_0613`. The fallback target is
+`iter_000002100`. It keeps the no-concurrent-writer invariant: it polls the
+4-H200 writer job `127281`, and only launches two-GPU SFT into the active root
+if that primary writer disappears while `latest_checkpoint.txt` is still below
+the target iteration.
 
 ## Closed-Loop Smoke Preparation
 
