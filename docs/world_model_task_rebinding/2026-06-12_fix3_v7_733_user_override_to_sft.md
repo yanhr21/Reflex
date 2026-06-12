@@ -648,3 +648,19 @@ Boundary:
   `127120.0` is waiting for `iter_000000300` with strict eval settings
   (`N_EVAL_SAMPLES=10`, full `301/300` contract). Watch log:
   `/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter_000000300_watch_aux_realloc.log`.
+
+2026-06-12 19:38 CST monitor update:
+
+- Training remains live on Slurm step `126210.41`. Rank-0 loss has dropped
+  quickly from iter0 validation `3.606580` to iteration 45 train loss `0.9703`
+  (`vision=0.0544`, `action=0.4580`), with stable per-step time around
+  `17.3s` after startup. No OOM, NaN, traceback, or SFT failure marker was
+  observed in the inspected log.
+- The iter300 eval watcher remains live on auxiliary job `127120`, step
+  `127120.0`, and is correctly reporting `checkpoint_not_ready`; no
+  `iter_000000300` checkpoint or eval artifacts exist yet.
+- The generated-RGB readout checkpoint to use after strict eval is the existing
+  v7_733 reference readout:
+  `/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245/task_state_readout_reference_rgb_301f_v7_733/best_model.pt`.
+  Do not run readout before strict eval finishes, to avoid competing with the
+  single auxiliary GPU while inference is running.

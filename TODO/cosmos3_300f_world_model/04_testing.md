@@ -5,12 +5,17 @@
 - [ ] Current source line is the fix3 v7 user-override `733`-row SFT source.
       The first SFT root
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245`
-      completed as negative diagnostic evidence. The currently running
+      completed as negative diagnostic evidence. The later
+      `normactive_clip1` root is also rejected because it selected the action
+      tensors but used the wrong action-training recipe. The current active
       follow-up root is
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
-      This data is DP-success-filtered bootstrap data, not hard-dynamic proof.
-      Stored accepted H5 replay should succeed by construction, and same-seed
-      DP reruns on this accepted subset are expected to be near ceiling if the
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`,
+      which uses the overfit-approved fix1 defaults (`lr=1e-4`,
+      `action_loss_weight=2.0`, `independent_action_schedule=true`,
+      `shift_action=1`) and passed the recipe guard at launch. This data is
+      still DP-success-filtered bootstrap data, not hard-dynamic proof. Stored
+      accepted H5 replay should succeed by construction, and same-seed DP
+      reruns on this accepted subset are expected to be near ceiling if the
       environment is reproducible. The immediate gate is strict same-length
       generated-video/action inspection, generated-RGB task-state
       readout/profile, and direct visual review after each evaluated
@@ -19,6 +24,20 @@
       this gate produces acceptable target-motion/final-target/peg-contact
       evidence, and later method-gain claims must use an unfiltered/hard
       dynamic baseline where frozen DP success is measured separately.
+- [ ] Active iter300 gate for the current fix1-recipe full run: Slurm step
+      `126210.41` on `server56` is training, and auxiliary job `127120` on
+      `server40` is waiting for checkpoint `iter_000000300` to run strict eval
+      on 10 samples. After strict eval passes, run generated-RGB readout with
+      the existing v7_733 reference readout checkpoint
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245/task_state_readout_reference_rgb_301f_v7_733/best_model.pt`,
+      then run the readout failure profile and open review sheets before
+      deciding whether to continue to iter600 or debug.
+- [x] Current 2026-06-12 19:38 CST monitor: the fix1-recipe full run is live
+      and healthy through rank-0 iteration 45. Iter0 validation loss was
+      `3.606580`; rank-0 iteration 45 train loss is `0.9703` with
+      `vision=0.0544`, `action=0.4580`, and no OOM/NaN/traceback marker in the
+      inspected log. The iter300 watcher remains live on auxiliary job
+      `127120` and is correctly waiting; no iter300 checkpoint exists yet.
 - [x] Post-SFT training/eval code-path audit found no obvious 128/93-frame
       truncation, fixed-eight-prefix misuse, or future-action leakage through
       the condition mask. Rows reference full `301`-frame videos and `300x32`
