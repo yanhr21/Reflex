@@ -6,11 +6,20 @@ Current authoritative state after the latest fix1-recipe restart:
 
 - The current authoritative full-data v7_733 SFT root is
   `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
-- It used the overfit-approved fix1 action recipe and ended at Slurm wall time
-  after rank-0 iteration `743`. This was a Slurm time-limit stop, not an agent
-  `scancel`.
-- Saved checkpoints are only `iter_000000300` and `iter_000000600`; there is
-  no iter900/iter1200 checkpoint or active watcher for this root.
+- It uses the overfit-approved fix1 action recipe. The first 4-GPU launch ended
+  at Slurm wall time after rank-0 iteration `743`; that was a Slurm time-limit
+  stop, not an agent `scancel`. Saved checkpoints from that launch were
+  `iter_000000300` and `iter_000000600`.
+- On 2026-06-13 CST the run was resumed from `iter_000000600` in held Slurm
+  job `127120` on `server40` using `1xH200` while 2-GPU and 4-GPU replacement
+  allocations remain queued. The last inspected live training log reached
+  rank-0 iteration `627` with finite loss and `100%` GPU utilization.
+- Held job `127289` on `server10` is running compute step `127289.0` as the
+  current strict `iter_000000900` eval/readout/profile/gate watcher. It waits
+  for a stable `iter_000000900` checkpoint, then writes under
+  `eval_full_episode_wam_iter_000000900` without modifying SFT checkpoints.
+  Watch chain log:
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter900_watch_chain_20260613_003753.log`.
 - Both evaluated checkpoints pass the strict 301-frame / 300-action artifact
   contract, but neither is controller-ready. Iter300 is the best qualitative
   sanity checkpoint so far and still has imprecise handoff geometry; iter600 is

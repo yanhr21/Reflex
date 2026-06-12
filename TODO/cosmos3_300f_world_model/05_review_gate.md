@@ -26,11 +26,19 @@
       `77-131`, static/peg-only cases also false-fire target motion, and
       final peg/hole/hand geometry is not reliable enough for executable
       handoff.
-- [x] No current v7_733 review gates are pending. The latest fix1-recipe root
-      saved no `iter_000000900` checkpoint, no `iter_000001200` checkpoint, and
-      has no active watcher. Old `normactive_clip1` iter900/iter1200 notes are
-      historical negative diagnostics and must not be treated as the active
-      review gate.
+- [x] Prior state after the 2026-06-12 4-GPU wall-time stop: the latest
+      fix1-recipe root had saved only `iter_000000300` and `iter_000000600`.
+      Old `normactive_clip1` iter900/iter1200 notes remain historical negative
+      diagnostics and must not be treated as the active review gate.
+- [ ] Current 2026-06-13 continuation gate is pending. Training has resumed
+      from `iter_000000600` in held Slurm job `127120` on `server40`, while
+      held job `127289` on `server10` runs step `127289.0` as a strict
+      `iter_000000900` eval/readout/profile/gate watcher. This watcher is
+      read-only with respect to SFT checkpoints and writes under:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000900`.
+      No controller or DP integration may start until this gate produces
+      strict artifacts, generated-RGB readout/profile, and explicit visual
+      review evidence.
 - [ ] No controller or DP integration may be launched from the current v7_733
       line until a future completed checkpoint passes strict artifact accounting,
       generated-RGB readout/profile, and visual review for target motion,
