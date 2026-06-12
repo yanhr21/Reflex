@@ -2,24 +2,27 @@
 
 ## Current Active Boundary
 
-- [x] The current active run is the fix3 v7_733 follow-up Cosmos3 SFT:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
-      It runs on Slurm step `126210.38` in the preserved 4-H200 allocation
-      `126210` on `server56`. The frozen source is the user-override
-      `733`-row v7 DP source, not the old full1000/fix1 chain.
-- [x] Current v7_733 review gates completed: `iter_000000300`,
-      `iter_000000600`, and `iter_000000900` strict generated artifacts,
-      generated-RGB readout/profile, and direct visual review. All three
-      passed structural length/action checks but failed controller/DP
-      readiness because visual contact/peg continuity and target-onset
-      diagnostics remain negative.
-- [ ] Current v7_733 review gates still pending: `iter_000001200` and later.
-      The active watcher runs inside aux allocation `126985` on `server40` as
-      Slurm step `126985.9`, waiting for checkpoint `iter_000001200`; do not
-      claim its result until strict inspection, generated-RGB readout/profile,
-      and direct review of all validation sheets are complete.
+- [x] The current authoritative v7_733 follow-up Cosmos3 SFT is the fix1-recipe
+      root:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+      It used the overfit-approved action recipe and ended at Slurm wall time
+      after rank-0 iteration `743`. The frozen source is the user-override
+      `733`-row v7 DP source, not the old full1000/fix1 chain and not a
+      hard-dynamic baseline.
+- [x] Current fix1-recipe v7_733 review gates completed: `iter_000000300` and
+      `iter_000000600` strict generated artifacts, generated-RGB
+      readout/profile, and direct visual review. Both passed structural
+      length/action checks but failed controller/DP readiness. Iter300 is the
+      best qualitative sanity checkpoint so far but remains imprecise for
+      handoff; iter600 is worse on rollout/readout/visual evidence despite
+      lower validation loss.
+- [x] No current v7_733 review gates are pending. The latest fix1-recipe root
+      saved no `iter_000000900` checkpoint, no `iter_000001200` checkpoint, and
+      has no active watcher. Old `normactive_clip1` iter900/iter1200 notes are
+      historical negative diagnostics and must not be treated as the active
+      review gate.
 - [ ] No controller or DP integration may be launched from the current v7_733
-      run until a completed checkpoint passes strict artifact accounting,
+      line until a future completed checkpoint passes strict artifact accounting,
       generated-RGB readout/profile, and visual review for target motion,
       final target pose, peg/hand continuity, and executable handoff.
 - [x] Entries below that refer to the 2026-06-10 full1000/fix1 runs, old
@@ -45,18 +48,17 @@
 ## Still Not Started
 
 - [ ] No controller or DP integration has been launched.
-- [ ] No controller or DP integration may be launched from `iter_000000300`.
-      That checkpoint passed length/action artifact checks, but visual review
-      and target-motion readout quality failed the active method gate.
-- [ ] No controller or DP integration may be launched from `iter_000000600`
-      or the 4-GPU warm-start run until those checkpoints produce strict
-      generated-video/action artifacts, generated-RGB readout metrics, and
-      inspected contact sheets/videos under the same 301-frame / 300-action
-      contract.
-- [ ] `iter_000000600` specifically is not acceptable for controller or DP
-      integration. Its strict artifact contract passed, but generated-RGB
-      readout and visual inspection still fail the target-motion/recovery
-      handoff requirement.
+- [ ] No controller or DP integration may be launched from the latest
+      fix1-recipe `iter_000000300`. That checkpoint passed length/action
+      artifact checks and is the best current qualitative sanity checkpoint,
+      but visual/readout evidence is still too imprecise for executable
+      handoff.
+- [ ] No controller or DP integration may be launched from the latest
+      fix1-recipe `iter_000000600`.
+- [x] The latest fix1-recipe `iter_000000600` specifically is not acceptable
+      for controller or DP integration. Its strict artifact contract passed,
+      but generated-RGB readout and visual inspection still fail the
+      target-motion/recovery handoff requirement.
 
 ## Current Negative Diagnostic
 

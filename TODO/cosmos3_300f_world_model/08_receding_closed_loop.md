@@ -6,23 +6,29 @@
       follow-up SFT until a checkpoint passes all three gates:
       strict same-length generated artifacts, generated-RGB readout/profile,
       and direct visual review of all validation sheets/videos.
-- [ ] The already evaluated `iter_000000300` and `iter_000000600`
-      checkpoints are not controller-ready. They preserve prefix conditions,
+- [x] The latest fix1-recipe root
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
+      ended at Slurm wall time after rank-0 iteration `743`. It saved only
+      `iter_000000300` and `iter_000000600`; no iter900/iter1200 checkpoint or
+      watcher exists for this root.
+- [x] The already evaluated latest fix1-recipe `iter_000000300` and
+      `iter_000000600` checkpoints are not controller-ready. They preserve
+      prefix conditions and pass the 301-frame / 300-action structural gate,
       but future action/state/video quality and visual peg/contact continuity
-      remain negative.
-- [ ] The evaluated `iter_000000900` checkpoint is also not controller-ready.
-      Strict artifacts passed and metrics improved over iter600, but direct
-      review of all `10` sheets still showed robot/peg divergence,
-      dropped/table-contact peg paths, white/transparent geometry collapse,
-      and non-physical contact continuity. Target-onset diagnostics also
-      remain negative, with early false fires on static/peg-only samples and
-      early target-motion predictions on moving samples.
-- [ ] The active `iter_000001200` watcher is waiting for the checkpoint as of
-      `2026-06-12 18:01 CST`. SFT has reached rank-0 iteration `1036`, but no
-      iter1200 eval/readout/profile artifacts exist yet.
+      remain negative. Iter300 is the best qualitative sanity checkpoint so
+      far; iter600 is worse despite lower validation loss.
+- [x] Historical `normactive_clip1` iter900/iter1200 notes are not the active
+      closed-loop gate. That run was rejected because it did not use the
+      overfit-approved fix1 action recipe.
 
 ## Required Execution Contract
 
+- [x] Add a conservative closed-loop gate checker:
+      `scripts/world_model/check_cosmos3_closed_loop_gate.py`. It reads a
+      Cosmos eval root, strict artifact inspection, generated-RGB
+      readout/profile, and an explicit visual-review verdict. It blocks by
+      default unless all three gates pass and should be called by any future
+      live closed-loop wrapper before it touches DP or the simulator.
 - [ ] The future closed-loop wrapper must run only inside a Slurm compute-node
       allocation. It must refuse login-node execution, like the current
       Cosmos eval/readout watchers.

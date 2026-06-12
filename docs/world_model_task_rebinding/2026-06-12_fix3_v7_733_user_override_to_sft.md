@@ -2,6 +2,31 @@
 
 Date: 2026-06-12.
 
+Current authoritative state after the latest fix1-recipe restart:
+
+- The current authoritative full-data v7_733 SFT root is
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
+- It used the overfit-approved fix1 action recipe and ended at Slurm wall time
+  after rank-0 iteration `743`. This was a Slurm time-limit stop, not an agent
+  `scancel`.
+- Saved checkpoints are only `iter_000000300` and `iter_000000600`; there is
+  no iter900/iter1200 checkpoint or active watcher for this root.
+- Both evaluated checkpoints pass the strict 301-frame / 300-action artifact
+  contract, but neither is controller-ready. Iter300 is the best qualitative
+  sanity checkpoint so far and still has imprecise handoff geometry; iter600 is
+  worse on rollout/readout/visual evidence despite lower validation loss.
+- Closed-loop DP/controller work remains gated off. The `normactive_clip1`
+  iter900/iter1200 notes later in this chronological document are historical
+  negative diagnostics from a rejected recipe, not the active review gate.
+- A conservative closed-loop gate checker was added at
+  `scripts/world_model/check_cosmos3_closed_loop_gate.py`. It reads the strict
+  eval artifact JSON, generated-RGB readout summary, readout failure profile,
+  and an explicit visual-review verdict. It blocks by default unless all three
+  gates pass. Running it on the latest fix1-recipe iter300 and iter600 roots
+  with the agent visual verdict set to `fail` returned
+  `closed_loop_allowed=false` for both; the blocking reason is
+  `explicit_visual_review_not_passed`.
+
 Latest user instruction stopped data construction immediately and directed the
 agent to proceed to Cosmos3 SFT. The old gate requiring exactly 1000 rows and
 then stopping for user approval is superseded for this immediate run.

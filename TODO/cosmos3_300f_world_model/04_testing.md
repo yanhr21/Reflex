@@ -2,28 +2,27 @@
 
 ## Current Active Boundary
 
-- [ ] Current source line is the fix3 v7 user-override `733`-row SFT source.
+- [x] Current source line is the fix3 v7 user-override `733`-row SFT source.
       The first SFT root
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245`
       completed as negative diagnostic evidence. The later
       `normactive_clip1` root is also rejected because it selected the action
-      tensors but used the wrong action-training recipe. The current active
+      tensors but used the wrong action-training recipe. The latest fix1-recipe
       follow-up root is
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`,
-      which uses the overfit-approved fix1 defaults (`lr=1e-4`,
+      which used the overfit-approved fix1 defaults (`lr=1e-4`,
       `action_loss_weight=2.0`, `independent_action_schedule=true`,
-      `shift_action=1`) and passed the recipe guard at launch. This data is
-      still DP-success-filtered bootstrap data, not hard-dynamic proof. Stored
-      accepted H5 replay should succeed by construction, and same-seed DP
-      reruns on this accepted subset are expected to be near ceiling if the
-      environment is reproducible. The immediate gate is strict same-length
-      generated-video/action inspection, generated-RGB task-state
-      readout/profile, and direct visual review after each evaluated
-      checkpoint. Do not report task-success improvement over DP from this
-      accepted subset. Do not start closed-loop DP/controller evaluation until
-      this gate produces acceptable target-motion/final-target/peg-contact
-      evidence, and later method-gain claims must use an unfiltered/hard
-      dynamic baseline where frozen DP success is measured separately.
+      `shift_action=1`) and passed the recipe guard at launch. That step ended
+      at Slurm wall time after rank-0 iteration `743`; only iter300 and iter600
+      checkpoints exist. This data is still DP-success-filtered bootstrap data,
+      not hard-dynamic proof. Stored accepted H5 replay should succeed by
+      construction, and same-seed DP reruns on this accepted subset are
+      expected to be near ceiling if the environment is reproducible. Do not
+      report task-success improvement over DP from this accepted subset. Do not
+      start closed-loop DP/controller evaluation until a future checkpoint
+      produces acceptable target-motion/final-target/peg-contact evidence, and
+      later method-gain claims must use an unfiltered/hard dynamic baseline
+      where frozen DP success is measured separately.
 - [x] Iter300 gate for the current fix1-recipe full run completed. Slurm step
       `126210.41` on `server56` continues training, and auxiliary job `127120`
       on `server40` ran strict eval, generated-RGB readout, failure profile,
@@ -95,16 +94,14 @@
       and `peg_recovery` is mostly `peg_drop` rather than moving-hole recovery.
       This is enough to validate the WAM SFT interface, but not enough to claim
       robust disturbance recovery or hard target-rebinding behavior.
-- [ ] Monitor the follow-up v7_733 diagnostic SFT:
+- [x] Historical rejected v7_733 diagnostic SFT:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
-      It reuses the same rendered dataset and WAM condition root, but changes
-      `normalize_loss_by_active=true` and `grad_clip_norm=1.0` to address the
-      observed failure where prefix conditions are preserved but future
-      action/state/video rollout is poor. Startup passed; iter-0 validation
-      loss was finite at `17.642225`. Do not compare this loss directly with
-      the first run's iter-0 loss because active-token normalization changes
-      the scale. Evaluate generated artifacts at saved checkpoints before any
-      controller decision.
+      This run is not active. It selected action tensors but used the wrong
+      action-training recipe and was stopped by allocation-internal interrupt
+      after user visual rejection. Its iter300/600/900 notes below are
+      historical negative diagnostics only; no normactive watcher is currently
+      running, and no controller decision should reference it as an active
+      path.
       Update `2026-06-12 13:11 CST`: SFT step `126210.38` remains live on
       `server56`, recent logs reached about iteration `63`, and there is no
       failure marker or saved checkpoint yet. A tmux-held auxiliary 1-GPU eval
