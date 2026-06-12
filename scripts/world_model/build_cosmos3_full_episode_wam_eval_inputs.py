@@ -27,6 +27,21 @@ ROLE_PRIORITY = [
 ]
 
 DESIRED_ROLE_SCENARIO_PAIRS = [
+    # Current fix3 v7 scenario names. Keep these first so the default panel
+    # covers the active data instead of falling back to older candidate names.
+    ("target_pre_motion", "hole_late_move_stop"),
+    ("target_motion_observed", "hole_late_constant"),
+    ("target_post_motion", "hole_late_reverse"),
+    ("insert_resume", "hole_late_fast_shift"),
+    ("target_pre_motion", "hole_late_sine"),
+    ("target_motion_observed", "hole_late_continuous_insert"),
+    ("target_post_motion", "hole_late_continuous_insert"),
+    ("peg_recovery", "peg_drop"),
+    ("static_monitor", "none"),
+    ("static_late_monitor", "none"),
+    ("insert_resume", "none"),
+    # Historical scenario names from earlier fix3 candidates. Keep them after
+    # the active names for old roots, but do not let them dominate v7 eval.
     ("target_pre_motion", "hole_continuous_insert_large"),
     ("target_motion_observed", "hole_continuous_insert_large"),
     ("target_post_motion", "hole_reverse_large"),
@@ -45,6 +60,18 @@ DESIRED_ROLE_SCENARIO_PAIRS = [
     ("insert_resume", "hole_move_stop"),
     ("target_pre_motion", "hole_constant"),
     ("insert_resume", "none"),
+]
+
+ACTIVE_V7_SCENARIOS = [
+    "hole_late_move_stop",
+    "hole_late_constant",
+    "hole_late_reverse",
+    "hole_late_sine",
+    "hole_late_continuous_insert",
+    "hole_late_fast_shift",
+    "none",
+    "peg_drop",
+    "peg_disturb",
 ]
 
 
@@ -300,6 +327,23 @@ def main() -> None:
         role_counts[str(row.get("prefix_role"))] = role_counts.get(str(row.get("prefix_role")), 0) + 1
         scenario = row_scenario(row)
         scenario_counts[scenario] = scenario_counts.get(scenario, 0) + 1
+    candidate_role_counts: dict[str, int] = {}
+    candidate_scenario_counts: dict[str, int] = {}
+    for row in candidates:
+        role = str(row.get("prefix_role"))
+        scenario = row_scenario(row)
+        candidate_role_counts[role] = candidate_role_counts.get(role, 0) + 1
+        candidate_scenario_counts[scenario] = candidate_scenario_counts.get(scenario, 0) + 1
+    candidate_scenarios = set(candidate_scenario_counts)
+    selected_scenarios = set(scenario_counts)
+    active_missing_from_candidates = [
+        scenario for scenario in ACTIVE_V7_SCENARIOS if scenario not in candidate_scenarios
+    ]
+    active_missing_from_selection = [
+        scenario
+        for scenario in ACTIVE_V7_SCENARIOS
+        if scenario in candidate_scenarios and scenario not in selected_scenarios
+    ]
 
     manifest = {
         "boundary": "Eval input manifest only; not model evidence until generated outputs pass inspection.",
@@ -316,6 +360,16 @@ def main() -> None:
         "num_selected_samples": len(selected),
         "role_counts": role_counts,
         "scenario_counts": scenario_counts,
+        "candidate_role_counts": dict(sorted(candidate_role_counts.items())),
+        "candidate_scenario_counts": dict(sorted(candidate_scenario_counts.items())),
+        "active_v7_scenarios": ACTIVE_V7_SCENARIOS,
+        "active_v7_scenarios_missing_from_candidates": active_missing_from_candidates,
+        "active_v7_scenarios_missing_from_selection": active_missing_from_selection,
+        "coverage_boundary": (
+            "Default eval panels are diagnostic. Missing scenarios do not relax "
+            "closed-loop gates; they identify coverage gaps that need a larger "
+            "or split-specific panel before method claims."
+        ),
         "samples": manifest_samples,
         "rejected_preview": rejected[:20],
     }

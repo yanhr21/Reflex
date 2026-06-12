@@ -57,6 +57,29 @@ Current authoritative state after the latest fix1-recipe restart:
   manifest, DP checkpoint, WAM condition contract, and action preview passed.
   Closed-loop execution still remained blocked solely because the explicit
   visual review gate is `fail`; no live `env.step` rollout was started.
+- The eval-input selector for active v7 was corrected after finding that the
+  previous desired scenario names were historical (`*_large`/old names) and
+  the default 10-sample panel fell back to only three scenario classes. The new
+  selector prioritizes current v7 names and records coverage in the manifest.
+  Corrected-panel eval for latest fix1-recipe `iter_000000300` ran in held
+  compute allocation `127120` under
+  `eval_full_episode_wam_iter_000000300_v7panel`. It selected all val-present
+  scenarios (`hole_late_move_stop`, `hole_late_constant`,
+  `hole_late_reverse`, `hole_late_sine`,
+  `hole_late_continuous_insert`, `hole_late_fast_shift`, `none`, and
+  `peg_drop`) and recorded `peg_disturb` as absent from val candidates. Strict
+  artifacts passed (`301/301` videos, `300x32` actions, no strict failures);
+  generated-RGB readout/profile also passed structure. Metrics were still not
+  controller-ready: mean future PSNR `21.7198`, action RMSE `0.3813`,
+  robot-action future RMSE `0.6954`, state-sidecar future RMSE `0.3705`,
+  mean final hole error `0.0502` m, and future hole/peg/TCP RMSE
+  `0.0331/0.0420/0.0430` m. Direct visual review of representative sheets
+  found stable nonblank videos but unreliable final peg/hole/hand relative
+  geometry. Onset diagnostics are explicitly negative: moving-hole target
+  onset is predicted at frames `5-9` while GT onset is `77-131`, and
+  `none`/`peg_drop` samples false-fire target motion. The corrected-panel
+  closed-loop gate therefore remains blocked with
+  `closed_loop_allowed=false`, reason `explicit_visual_review_not_passed`.
 
 Latest user instruction stopped data construction immediately and directed the
 agent to proceed to Cosmos3 SFT. The old gate requiring exactly 1000 rows and

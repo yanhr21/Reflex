@@ -16,6 +16,16 @@
       best qualitative sanity checkpoint so far but remains imprecise for
       handoff; iter600 is worse on rollout/readout/visual evidence despite
       lower validation loss.
+- [x] Current fix1-recipe `iter_000000300` was also re-evaluated with the
+      corrected active-v7 validation panel:
+      `eval_full_episode_wam_iter_000000300_v7panel`. This panel covers all
+      scenario classes present in the val split and records that `peg_disturb`
+      is missing from val candidates. It passed strict structure and readout
+      structure, but direct visual review still fails controller readiness:
+      target onset false-fires around frames `5-9`, moving-hole GT onset is
+      `77-131`, static/peg-only cases also false-fire target motion, and
+      final peg/hole/hand geometry is not reliable enough for executable
+      handoff.
 - [x] No current v7_733 review gates are pending. The latest fix1-recipe root
       saved no `iter_000000900` checkpoint, no `iter_000001200` checkpoint, and
       has no active watcher. Old `normactive_clip1` iter900/iter1200 notes are

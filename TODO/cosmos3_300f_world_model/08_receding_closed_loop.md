@@ -17,6 +17,15 @@
       but future action/state/video quality and visual peg/contact continuity
       remain negative. Iter300 is the best qualitative sanity checkpoint so
       far; iter600 is worse despite lower validation loss.
+- [x] The corrected active-v7 panel for `iter_000000300`
+      (`eval_full_episode_wam_iter_000000300_v7panel`) also remains
+      controller-blocked. It covers every scenario present in val
+      (`hole_late_*`, `none`, `peg_drop`; `peg_disturb` is absent from val),
+      passes strict artifacts/readout/profile, and then blocks at visual
+      review because target-motion onset false-fires and final contact/relative
+      geometry is not executable. The closed-loop gate verdict is
+      `closed_loop_allowed=false` with reason
+      `explicit_visual_review_not_passed`.
 - [x] Historical `normactive_clip1` iter900/iter1200 notes are not the active
       closed-loop gate. That run was rejected because it did not use the
       overfit-approved fix1 action recipe.

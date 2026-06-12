@@ -94,6 +94,31 @@
       and `peg_recovery` is mostly `peg_drop` rather than moving-hole recovery.
       This is enough to validate the WAM SFT interface, but not enough to claim
       robust disturbance recovery or hard target-rebinding behavior.
+- [x] Correct the strict eval panel selector for the active v7 scenario names.
+      The old selector prioritized historical names such as
+      `hole_move_stop_large` and fell back to a narrow panel covering only
+      `hole_late_move_stop`, `none`, and `peg_drop`. The updated selector now
+      prioritizes `hole_late_move_stop`, `hole_late_constant`,
+      `hole_late_reverse`, `hole_late_sine`,
+      `hole_late_continuous_insert`, `hole_late_fast_shift`, `none`, and
+      `peg_drop`, and records candidate/selected coverage in
+      `eval_input_manifest.json`. On the current val split, `peg_disturb` is
+      absent from candidates because the split has no `peg_disturb` rows.
+- [x] Run corrected-panel strict eval/readout/profile for current fix1-recipe
+      `iter_000000300` in held compute allocation `127120`:
+      `eval_full_episode_wam_iter_000000300_v7panel`. The panel structurally
+      passed (`strict_eval_artifacts_ok=true`, `strict_failures=[]`) over all
+      `10` samples and covers all available val scenarios. Aggregate artifact
+      metrics: mean future PSNR `21.7198`, mean action RMSE `0.3813`,
+      robot-action future RMSE `0.6954`, state-sidecar future RMSE `0.3705`.
+      Generated-RGB readout/profile also passed structure with mean final hole
+      error `0.0502` m, future hole/peg/TCP RMSE
+      `0.0331/0.0420/0.0430` m, and future peg-head-hole RMSE `0.0366` m.
+      Direct sheet review remains controller-negative: moving-hole samples
+      predict target onset around frames `5-9` while GT onset is `77-131`, and
+      `none`/`peg_drop` false-fire target motion. Visual sheets show stable
+      nonblank videos but unreliable final peg/hole/hand relative geometry.
+      Closed-loop remains gated off.
 - [x] Historical rejected v7_733 diagnostic SFT:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
       This run is not active. It selected action tensors but used the wrong
