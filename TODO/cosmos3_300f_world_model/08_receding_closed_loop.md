@@ -31,6 +31,15 @@
       `iter_000001200` checkpoint and will write under:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200`.
       This watcher is read-only with respect to SFT checkpoints.
+- [ ] A second read-only watcher is active for the planned `iter_000001500`
+      checkpoint. It runs as Slurm step `127288.22` on `server03` from tmux
+      `cosmos3_v7_733_iter1500_watch_0613`, writes under:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001500`,
+      and logs to:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter1500_watch_chain_20260613_0302.log`.
+      This uses a held 2-H200 allocation for future eval/readout/profile/gate
+      work, but it does not start a second training process against the same
+      checkpoint root.
 - [x] The already evaluated latest fix1-recipe `iter_000000300` and
       `iter_000000600` checkpoints are not controller-ready. They preserve
       prefix conditions and pass the 301-frame / 300-action structural gate,
