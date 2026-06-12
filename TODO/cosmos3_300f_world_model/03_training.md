@@ -88,12 +88,14 @@
       Direct review of all `10` sheets found visible relative-pose drift and
       peg/contact inconsistencies in several samples. Treat iter600 as
       negative for controller handoff.
-- [ ] Let the live SFT continue only within the already held allocation. Do
-      not request controller/DP integration, and do not pick checkpoints by
-      validation loss alone. If the allocation reaches a later checkpoint,
-      evaluate it with the same strict same-length action/readout/visual gate;
-      otherwise keep iter300 as the best current qualitative sanity checkpoint
-      while recording that it is still not controller-ready.
+- [x] Let the live SFT continue only within the already held allocation. The
+      Slurm step ended at allocation wall time on `2026-06-12 23:06:27 CST`
+      (`DUE TO TIME LIMIT`), after reaching rank-0 iteration `743`. No
+      `sft_completed` marker and no checkpoint beyond `iter_000000600` exist;
+      no traceback/OOM/NaN marker was found. Do not request controller/DP
+      integration, and do not pick checkpoints by validation loss alone.
+      Iter300 remains the best current qualitative sanity checkpoint while
+      still not controller-ready.
 - [x] Historical entry superseded: the rejected follow-up run was:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
       It uses the frozen user-override `733`-row v7 DP source and the existing

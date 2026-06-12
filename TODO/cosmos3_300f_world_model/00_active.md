@@ -64,13 +64,14 @@
       white-fog collapse, but several samples show block/robot relative-pose
       drift, peg/contact discontinuity, or target-position errors that make
       DP resume unsafe. Do not start controller/DP integration from iter600.
-- [ ] Continue the live SFT inside the already held 4-H200 allocation without
-      cancelling it. The allocation is near its one-day wall time, so an
-      iter900 checkpoint is not expected unless the allocation naturally runs
-      long enough. If a later checkpoint appears, run the same strict
-      eval/readout/visual gate before any controller work; otherwise preserve
-      iter300 as the current best qualitative sanity checkpoint and keep
-      controller gated.
+- [x] The live 4-H200 SFT allocation ended naturally at wall time. Slurm
+      reported step `126210.41` cancelled at `2026-06-12 23:06:27 CST` due to
+      time limit, not by agent `scancel`. The last rank-0 log reached
+      iteration `743` with finite loss; no traceback/OOM/NaN marker was found.
+      No checkpoint beyond `iter_000000600` was saved, so there is no iter900
+      evidence. Preserve iter300 as the current best qualitative sanity
+      checkpoint, record iter600 as controller-negative, and keep controller
+      gated.
 - [x] Stop the rejected 128-action / 129-frame chunked SFT job and its waiting
       action-eval/readout watcher sessions.
 - [x] Move old method results, old evidence conclusions, and old logs out of

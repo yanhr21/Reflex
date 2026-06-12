@@ -237,6 +237,25 @@ Fix1-recipe iter600 eval/readout/profile:
   passes generated video, action metrics, readout metrics, and direct visual
   review together.
 
+End of current fix1-recipe full SFT allocation:
+
+- The 4-H200 training step `126210.41` ended at `2026-06-12 23:06:27 CST`
+  because Slurm hit the allocation time limit:
+  `STEP 126210.41 ON server56 CANCELLED ... DUE TO TIME LIMIT`.
+- This was not an agent `scancel`; the run was allowed to continue until the
+  system stopped the step.
+- The final rank-0 training log reached iteration `743` with finite losses
+  (`Loss=0.1963`, `vision=0.0119`, `action=0.0922` at iteration `743`).
+  No traceback, CUDA OOM, or NaN marker was found in the inspected tail.
+- Saved checkpoints remain exactly `iter_000000300` and `iter_000000600`.
+  No `iter_000000900` checkpoint or eval exists, and no `sft_completed`
+  marker exists for this root.
+- Current evidence state: iter300 is the best qualitative sanity checkpoint
+  among evaluated checkpoints, iter600 is controller-negative, and the run has
+  no later checkpoint evidence. Do not advance to DP/controller integration
+  from this root without a new checkpoint that passes the same strict
+  full-episode generated-video/action/readout/visual gate.
+
 Post-SFT code-path audit:
 
 - The SFT/export path writes multiple full-episode rows per source trajectory,

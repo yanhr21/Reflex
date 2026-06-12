@@ -45,10 +45,13 @@
       sample-level target/robot relative-pose drift, peg/contact
       discontinuities, and unsafe final geometry. Do not use iter600 for
       closed-loop DP/controller work.
-- [ ] Watch only for a naturally produced later checkpoint from the existing
-      training allocation. Do not start a new controller path until a
-      checkpoint passes generated video, action metrics, readout metrics, and
-      visual review together.
+- [x] Watch for a naturally produced later checkpoint from the existing
+      training allocation. The step reached rank-0 iteration `743` and then
+      ended due to Slurm time limit at `2026-06-12 23:06:27 CST`; only
+      `iter_000000300` and `iter_000000600` checkpoints exist. Therefore
+      there is no iter900 gate to run, and no controller path should start
+      until a future checkpoint passes generated video, action metrics,
+      readout metrics, and visual review together.
 - [x] Current 2026-06-12 19:38 CST monitor: the fix1-recipe full run is live
       and healthy through rank-0 iteration 45. Iter0 validation loss was
       `3.606580`; rank-0 iteration 45 train loss is `0.9703` with
