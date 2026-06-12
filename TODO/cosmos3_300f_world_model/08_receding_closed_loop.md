@@ -40,6 +40,16 @@
       This uses a held 2-H200 allocation for future eval/readout/profile/gate
       work, but it does not start a second training process against the same
       checkpoint root.
+- [ ] A 2-H200 resume fallback watcher is active in tmux
+      `cosmos3_v7_733_2gpu_fallback_after4_0613` with log:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/sft_train_2gpu_fallback_after4_watch_20260613_0320.log`.
+      It uses `scripts/slurm/watch_cosmos3_resume_fallback_after_job.sh` to
+      monitor primary 4-H200 job `127281`. It does not start a second training
+      writer while job `127281` is still present. If the primary job disappears
+      before `iter_000001500` is reached, it will use held fallback allocation
+      `127286` to resume the same SFT root with `2` GPUs from the latest stable
+      checkpoint. This preserves the no-concurrent-writers rule while avoiding
+      idle waiting after an unexpected primary-job stop.
 - [x] The already evaluated latest fix1-recipe `iter_000000300` and
       `iter_000000600` checkpoints are not controller-ready. They preserve
       prefix conditions and pass the 301-frame / 300-action structural gate,
