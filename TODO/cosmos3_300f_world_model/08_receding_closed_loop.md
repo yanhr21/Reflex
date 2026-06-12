@@ -8,9 +8,16 @@
       and direct visual review of all validation sheets/videos.
 - [x] The latest fix1-recipe root
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
-      ended at Slurm wall time after rank-0 iteration `743`. It saved only
-      `iter_000000300` and `iter_000000600`; no iter900/iter1200 checkpoint or
-      watcher exists for this root.
+      first ended at Slurm wall time after rank-0 iteration `743`. It saved
+      `iter_000000300` and `iter_000000600` before that time-limit stop.
+      On 2026-06-13 CST, training resumed from `iter_000000600` in held
+      Slurm job `127120` on `server40`.
+- [ ] Current continuation gate is active: held job `127289` on `server10`
+      runs step `127289.0` as the strict `iter_000000900`
+      eval/readout/profile/gate watcher. It is waiting for a stable
+      `iter_000000900` checkpoint and will write under:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000900`.
+      This watcher is read-only with respect to SFT checkpoints.
 - [x] The already evaluated latest fix1-recipe `iter_000000300` and
       `iter_000000600` checkpoints are not controller-ready. They preserve
       prefix conditions and pass the 301-frame / 300-action structural gate,
@@ -130,7 +137,12 @@
       de-normalize and execute at most `8` robot actions, reobserve, and
       repeat until termination or `300` steps.
       Current implementation performs compute-node/gate/contract preflight
-      and refuses weak checkpoints; the live `env.step` smoke remains pending.
+      and refuses weak checkpoints; `mode=smoke` still exits before live
+      `env.step` with
+      `live_receding_smoke_not_implemented_in_this_guarded_entrypoint_yet`.
+      Implementing this real live-smoke path is the next controller-side code
+      task after a checkpoint passes the strict generated artifact/readout/
+      visual gate.
 - [ ] Save for every rollout: live RGB video, per-step executed robot action,
       generated action/state sidecars, real simulator metrics, target/peg/TCP
       readout trajectory, final success predicates, and a review sheet.
