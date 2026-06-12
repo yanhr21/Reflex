@@ -1,0 +1,44 @@
+# Local environments
+.venv/
+.venv_*/
+__pycache__/
+*.py[cod]
+
+# Third-party/vendor checkouts kept locally, not in this project repo
+deps/
+external/
+
+# Large/generated experiment artifacts
+checkpoints/
+data/
+experiments/
+logs/
+
+# Binary model/data/media artifacts
+*.ckpt
+*.h5
+*.hdf5
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.npy
+*.npz
+*.pkl
+*.pt
+*.pth
+*.safetensors
+*.tar
+*.tar.gz
+*.zip
+
+# Runtime/editor noise
+*.log
+*.tmp
+*.swp
+.DS_Store
