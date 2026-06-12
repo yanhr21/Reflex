@@ -2,6 +2,34 @@
 
 ## Current Active Boundary
 
+- [x] 2026-06-13 current continuation update for
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`:
+      the run is live again on Slurm job `127281` (`server31`, `4xH200`) and
+      has saved `iter_000001200`; the foreground training log continued past
+      rank-0 iteration `1238` with finite losses and about `17.4s/iter`.
+      The 4-H200 job is the only SFT checkpoint writer. Do not start a
+      simultaneous 2-H200 writer into this same root; the held 2-H200
+      allocation is reserved for fallback after the 4-H200 job disappears or
+      for read-only evaluation.
+- [x] Iter1200 gate for the current root completed and is controller-negative.
+      Strict eval artifacts passed (`10` samples, `301/301` videos,
+      `300x32` actions, `strict_failures=[]`), and generated-RGB
+      readout/profile passed structure. Metrics: mean future video PSNR
+      `21.4227`, mean action RMSE `0.4559`, robot-action future RMSE
+      `0.7272`, state-sidecar future RMSE `0.4704`, generated-RGB mean final
+      hole error `0.0993` m, mean future hole/peg/TCP RMSE
+      `0.0568/0.0555/0.0516` m, and future peg-head-hole RMSE `0.0347` m.
+      Direct review of all `10` ref/pred sheets failed visual handoff because
+      fast-shift and sine moving-hole predictions have wrong final relative
+      geometry, while static `none` samples drift/false-fire target motion.
+      `closed_loop_gate_visual_review.json` records
+      `closed_loop_allowed=false`.
+- [x] A 2-H200 read-only extra panel is running for `iter_000001200` in
+      tmux `cosmos3_v7_733_iter1200_extra30_2gpu_0613`, Slurm step
+      `127286.4`, with output root
+      `eval_full_episode_wam_iter_000001200_extra30_2gpu_20260613_0430`.
+      This uses the spare 2 GPUs without concurrent checkpoint writing and
+      does not relax the failed iter1200 closed-loop gate.
 - [x] Current source line is the fix3 v7 user-override `733`-row SFT source.
       The first SFT root
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245`

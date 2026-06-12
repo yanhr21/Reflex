@@ -40,6 +40,33 @@
 - [x] Startup sanity: training reached `Starting training...`, iter0 validation
       loss was `3.606580`, and rank-0 iteration 7 loss was `3.0716` with
       finite vision/action losses.
+- [x] 2026-06-13 continuation status: the current active root
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
+      has resumed beyond the earlier wall-time stop. The 4-H200 Slurm job
+      `127281` on `server31` is the only active SFT checkpoint writer and was
+      observed continuing past rank-0 iteration `1238` after saving
+      `iter_000001200`. Do not start a second two-GPU SFT writer into the same
+      root while this job is alive; a 2-H200 fallback watcher exists only to
+      resume from the latest checkpoint if the 4-H200 writer disappears before
+      the target checkpoint.
+- [x] Iter1200 strict eval/readout/profile completed for the current root.
+      Structure passed for `10` samples: generated/reference videos stayed
+      `301/301`, action tensors stayed `300x32`, and `strict_failures=[]`.
+      Aggregate metrics were mean future PSNR `21.4227`, mean action RMSE
+      `0.4559`, robot-action future RMSE `0.7272`, state-sidecar future RMSE
+      `0.4704`, and generated-RGB mean final hole error `0.0993` m.
+      Direct review of all `10` sheets failed closed-loop handoff: fast-shift
+      and sine moving-hole samples have wrong final peg/hole/hand relative
+      geometry, and static `none` samples show target/object drift with
+      target-motion false firing. The gate file records
+      `closed_loop_allowed=false` with reason
+      `explicit_visual_review_not_passed`.
+- [x] The spare 2-H200 allocation `127286` is being used for a read-only
+      `iter_000001200` extra-30 validation panel at
+      `eval_full_episode_wam_iter_000001200_extra30_2gpu_20260613_0430`.
+      It fixes `CHECKPOINT_PATH` to `iter_000001200` and writes to a separate
+      eval root; it does not write checkpoints, touch `latest_checkpoint.txt`,
+      or replace the 4-H200 SFT writer.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

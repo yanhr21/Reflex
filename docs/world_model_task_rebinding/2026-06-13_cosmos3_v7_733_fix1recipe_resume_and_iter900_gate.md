@@ -93,22 +93,91 @@ It records:
 
 No live DP/controller rollout should start from `iter_000000900`.
 
-## Iter1200 Watcher
+## Iter1200 Generated-Eval Gate
 
-The next strict eval/readout/profile/gate watcher is already running:
+Eval root:
 
-- Slurm job `127289`
-- node `server10`
-- step `127289.11`
-- target checkpoint `iter_000001200`
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200`
+
+The strict artifact check passed:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- 10 generated samples
+- generated/reference video length stayed `301/301`
+- action targets stayed `300x32`
+
+Readout/profile also passed structurally, but direct visual review failed
+controller-facing handoff:
+
+- mean future PSNR: `21.4226963555` dB
+- mean action RMSE: `0.4558975280`
+- mean robot-action future RMSE: `0.7271762588`
+- mean state-sidecar future RMSE: `0.4703645349`
+- mean final hole position error: `0.0992804290` m
+- mean future hole RMSE: `0.0567801252` m
+- mean future peg RMSE: `0.0555383943` m
+- mean future TCP RMSE: `0.0515553031` m
+- mean future peg-head-hole RMSE: `0.0347354275` m
+
+The agent opened all 10 `review_sheets/*_ref_pred_sheet.png`. Several
+moving-hole samples are visually stable but not reliable enough for
+controller handoff. The clear failures are:
+
+- `hole_late_fast_shift / insert_resume`: final block/hand/peg relative
+  geometry is wrong; the predicted peg is not in a DP-resumable insertion
+  relation.
+- `hole_late_sine / target_pre_motion`: final target and hand/peg relative
+  geometry are visibly wrong.
+- `none / static_monitor` and `none / static_late_monitor`: the target and
+  hand/object relation drift despite the target being static, matching the
+  failure-profile false target-motion onsets.
+
+The closed-loop gate file is:
+
+`eval_full_episode_wam_iter_000001200/closed_loop_gate_visual_review.json`
+
+It records:
+
+- `visual_review_status=fail`
+- `closed_loop_allowed=false`
+- reason `explicit_visual_review_not_passed`
+
+No live DP/controller rollout should start from `iter_000001200`.
+
+## Current Watchers And Spare-GPU Use
+
+The next strict eval/readout/profile/gate watcher is waiting for
+`iter_000001500`:
+
+- Slurm job `127288`
+- node `server03`
+- tmux `cosmos3_v7_733_iter1500_watch_0613`
+- target checkpoint `iter_000001500`
 - output root
-  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200`
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001500`
 - log
-  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter1200_watch_chain_20260613_025105.log`
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter1500_watch_chain_20260613_0302.log`
 
-The watcher is read-only with respect to SFT checkpoints. It waits for a
-stable checkpoint before running generated eval, generated-RGB readout,
-failure profiling, and the pre-visual closed-loop gate.
+A 2-H200 allocation is also held on Slurm job `127286` (`server40`). It must
+not run a concurrent SFT writer into the same root while the 4-H200 job
+`127281` is alive. It has two safe uses:
+
+- fallback resume after job `127281` disappears before `iter_000001500`;
+- read-only validation/eval that fixes `CHECKPOINT_PATH` and writes to an
+  independent eval root.
+
+The current read-only spare-GPU task is:
+
+- tmux `cosmos3_v7_733_iter1200_extra30_2gpu_0613`
+- Slurm step `127286.4`
+- fixed checkpoint `iter_000001200`
+- output root
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200_extra30_2gpu_20260613_0430`
+- `30` validation samples
+
+This task is diagnostic only and does not override the failed 10-sample
+iter1200 visual gate.
 
 ## Closed-Loop Preflight Code
 
