@@ -331,3 +331,41 @@ Both watchers run inside compute-node Slurm steps, wait for a stable checkpoint,
 run strict full-episode eval, generated-RGB readout, failure profiling, and a
 pre-visual closed-loop gate. They are read-only paths and must not be confused
 with a second SFT training writer.
+
+## Closed-Loop Smoke Preparation
+
+The guarded closed-loop entry point was extended while the SFT continued
+training. The gate behavior is unchanged: failed generated artifact/readout/
+visual gates still stop before any live simulator work.
+
+The new gate-passed `MODE=smoke` branch in
+`scripts/world_model/run_cosmos3_receding_closed_loop.py` now has a real short
+live-smoke path:
+
+- recover source H5/source UUID from the eval sample;
+- restore the real ManiSkill state env to `env_states[chunk_start]`;
+- execute only the de-normalized robot-action columns `0..6` from the Cosmos
+  predicted action chunk, with action-space violation/clipping recorded;
+- optionally execute one short frozen-DP resume horizon from
+  `best_eval_success_at_end.pt`;
+- record live `base_env.evaluate()` success and `peg_head_pos_at_hole` before
+  the chunk, after the Cosmos chunk, and after DP resume;
+- write `live_smoke_result.json` and a short RGB video when requested.
+
+This is still a guarded smoke path, not a task-success claim. It runs only
+after a checkpoint passes strict artifacts, generated-RGB readout/profile, and
+explicit visual review.
+
+A failed-gate compute codecheck was run on held job `127288`, step `127288.24`,
+using `iter_000001500` with `VISUAL_REVIEW_STATUS=fail`:
+
+`closed_loop_preflight_iter_000001500_gate_fail_smoke_codecheck_20260613`
+
+The wrapper exited with expected code `40`, recovered source context/source H5,
+and reported only:
+
+- `closed_loop_preflight_ok=false`
+- failure `closed_loop_gate_blocked`
+
+No `live_smoke_result.json` was written. This confirms the new smoke branch is
+not reachable through a failed visual gate.

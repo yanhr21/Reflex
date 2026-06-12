@@ -37,11 +37,15 @@ VISUAL_REVIEW_NOTE="${VISUAL_REVIEW_NOTE:-}"
 MODE="${MODE:-preflight}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-300}"
 ACTION_EXEC_HORIZON="${ACTION_EXEC_HORIZON:-8}"
+DP_RESUME_HORIZON="${DP_RESUME_HORIZON:-8}"
 ACTION_PREVIEW_SAMPLE_INDEX="${ACTION_PREVIEW_SAMPLE_INDEX:-0}"
 EXPECTED_VIDEO_FRAMES="${EXPECTED_VIDEO_FRAMES:-301}"
 EXPECTED_ACTION_STEPS="${EXPECTED_ACTION_STEPS:-300}"
 EXPECTED_ACTION_DIM="${EXPECTED_ACTION_DIM:-32}"
 ROBOT_ACTION_DIM="${ROBOT_ACTION_DIM:-7}"
+CAPTURE_LIVE_VIDEO="${CAPTURE_LIVE_VIDEO:-true}"
+LIVE_VIDEO_FPS="${LIVE_VIDEO_FPS:-10}"
+CLIP_LIVE_ACTIONS="${CLIP_LIVE_ACTIONS:-true}"
 
 main() {
   cd "${ROOT}"
@@ -62,8 +66,25 @@ main() {
     echo "visual_review_status=${VISUAL_REVIEW_STATUS}"
     echo "mode=${MODE}"
     echo "action_preview_sample_index=${ACTION_PREVIEW_SAMPLE_INDEX}"
+    echo "action_exec_horizon=${ACTION_EXEC_HORIZON}"
+    echo "dp_resume_horizon=${DP_RESUME_HORIZON}"
+    echo "capture_live_video=${CAPTURE_LIVE_VIDEO}"
+    echo "live_video_fps=${LIVE_VIDEO_FPS}"
+    echo "clip_live_actions=${CLIP_LIVE_ACTIONS}"
     echo "evidence_boundary=Preflight/gate only; not controller success evidence."
   } | tee "${OUTPUT_ROOT}/closed_loop_wrapper_manifest.txt"
+
+  local bool_args=()
+  if [[ "${CAPTURE_LIVE_VIDEO}" == "true" ]]; then
+    bool_args+=(--capture-live-video)
+  else
+    bool_args+=(--no-capture-live-video)
+  fi
+  if [[ "${CLIP_LIVE_ACTIONS}" == "true" ]]; then
+    bool_args+=(--clip-live-actions)
+  else
+    bool_args+=(--no-clip-live-actions)
+  fi
 
   "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/run_cosmos3_receding_closed_loop.py" \
     --eval-root "${EVAL_ROOT}" \
@@ -82,8 +103,11 @@ main() {
     --robot-action-dim "${ROBOT_ACTION_DIM}" \
     --max-episode-steps "${MAX_EPISODE_STEPS}" \
     --action-exec-horizon "${ACTION_EXEC_HORIZON}" \
+    --dp-resume-horizon "${DP_RESUME_HORIZON}" \
+    --live-video-fps "${LIVE_VIDEO_FPS}" \
     --action-preview-sample-index "${ACTION_PREVIEW_SAMPLE_INDEX}" \
     --mode "${MODE}" \
+    "${bool_args[@]}" \
     2>&1 | tee "${OUTPUT_ROOT}/closed_loop_preflight.log"
 }
 

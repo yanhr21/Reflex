@@ -12,10 +12,12 @@ import argparse
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -46,13 +48,56 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot-action-dim", type=int, default=7)
     parser.add_argument("--max-episode-steps", type=int, default=300)
     parser.add_argument("--action-exec-horizon", type=int, default=8)
+    parser.add_argument(
+        "--dp-resume-horizon",
+        type=int,
+        default=8,
+        help="After the Cosmos action chunk, execute up to this many frozen-DP actions for handoff smoke.",
+    )
     parser.add_argument("--action-preview-sample-index", type=int, default=0)
+    parser.add_argument(
+        "--capture-live-video",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Capture a short before/chunk/resume RGB video in smoke mode.",
+    )
+    parser.add_argument("--live-video-fps", type=int, default=10)
+    parser.add_argument(
+        "--clip-live-actions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Clip actions to the ManiSkill action space before env.step, while recording the pre-clip violation.",
+    )
     parser.add_argument("--mode", choices=("preflight", "smoke"), default="preflight")
     return parser.parse_args()
 
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
+
+
+def jsonable(value: Any) -> Any:
+    try:
+        import numpy as np
+        import torch
+    except Exception:  # pragma: no cover - best effort for optional deps
+        np = None  # type: ignore[assignment]
+        torch = None  # type: ignore[assignment]
+
+    if np is not None and isinstance(value, np.ndarray):
+        return value.tolist()
+    if torch is not None and isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy().tolist()
+    if isinstance(value, dict):
+        return {str(k): jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return value
 
 
 def require_compute_step() -> None:
@@ -471,6 +516,344 @@ def _column_stats(matrix: list[list[float]]) -> dict[str, Any]:
     }
 
 
+def _parse_seed_from_text(text: str) -> int | None:
+    match = re.search(r"_seed(\d+)", text)
+    if match is None:
+        match = re.search(r"seed(\d+)", text)
+    return int(match.group(1)) if match is not None else None
+
+
+def _get_base_env(env: Any) -> Any:
+    if hasattr(env, "envs") and env.envs:
+        candidate = env.envs[0]
+        if hasattr(candidate, "base_env"):
+            return candidate.base_env
+    if hasattr(env, "base_env"):
+        return env.base_env
+    if hasattr(env, "unwrapped"):
+        return env.unwrapped
+    return env
+
+
+def _live_eval(base_env: Any) -> dict[str, Any]:
+    from mani_skill.utils import common
+
+    info = base_env.evaluate()
+    return {
+        "success": bool(common.to_numpy(info["success"])[0]),
+        "peg_head_pos_at_hole": common.to_numpy(info["peg_head_pos_at_hole"])[0].astype(float).tolist(),
+    }
+
+
+def _render_frame(env: Any) -> Any:
+    import numpy as np
+
+    frame = env.render()
+    if isinstance(frame, list):
+        frame = frame[0]
+    return np.asarray(frame)
+
+
+def _action_space_bounds(env: Any, robot_action_dim: int) -> tuple[Any, Any]:
+    import numpy as np
+
+    space = getattr(env, "single_action_space", None) or getattr(env, "action_space", None)
+    if space is None or not hasattr(space, "low") or not hasattr(space, "high"):
+        return None, None
+    low = np.asarray(space.low, dtype=np.float32).reshape(-1)[:robot_action_dim]
+    high = np.asarray(space.high, dtype=np.float32).reshape(-1)[:robot_action_dim]
+    if low.shape[0] != robot_action_dim or high.shape[0] != robot_action_dim:
+        return None, None
+    return low, high
+
+
+def _prepare_step_action(action: Any, low: Any, high: Any, clip: bool) -> tuple[Any, dict[str, Any]]:
+    import numpy as np
+
+    raw = np.asarray(action, dtype=np.float32).reshape(-1)
+    clipped = raw.copy()
+    violation = 0.0
+    within = True
+    if low is not None and high is not None:
+        below = np.maximum(low - raw, 0.0)
+        above = np.maximum(raw - high, 0.0)
+        violation = float(max(float(below.max(initial=0.0)), float(above.max(initial=0.0))))
+        within = violation <= 1e-6
+        if clip:
+            clipped = np.clip(raw, low, high)
+    return clipped[None, :], {
+        "raw": raw.astype(float).tolist(),
+        "executed": clipped.astype(float).tolist(),
+        "within_action_space": bool(within),
+        "max_action_space_violation": violation,
+        "clipped": bool(clip and not within),
+    }
+
+
+def _import_live_control_stack(root: Path) -> dict[str, Any]:
+    dp_root = root / "deps/ManiSkill_clean/examples/baselines/diffusion_policy"
+    training_root = root / "scripts/training"
+    for path in (str(dp_root), str(training_root), str(root / "deps/ManiSkill_clean")):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+    import mani_skill.envs  # noqa: F401
+    from diffusion_policy.make_env import make_eval_envs
+    from mani_skill.trajectory import utils as trajectory_utils
+    from mani_skill.utils import common
+    import torch
+    import train as ms_train
+
+    return {
+        "make_eval_envs": make_eval_envs,
+        "trajectory_utils": trajectory_utils,
+        "common": common,
+        "torch": torch,
+        "ms_train": ms_train,
+    }
+
+
+def _make_live_env(stack: dict[str, Any], dp_manifest: Path, args: argparse.Namespace) -> Any:
+    manifest = read_json(dp_manifest)
+    dp_args = manifest.get("args") or {}
+    env_kwargs = dict(
+        control_mode=dp_args.get("control_mode", "pd_ee_delta_pose"),
+        reward_mode="sparse",
+        obs_mode="state",
+        render_mode="rgb_array",
+        human_render_camera_configs=dict(shader_pack="default"),
+        max_episode_steps=args.max_episode_steps,
+    )
+    return stack["make_eval_envs"](
+        dp_args.get("env_id", "PegInsertionSide-v1"),
+        1,
+        dp_args.get("sim_backend", "physx_cpu"),
+        env_kwargs,
+        dict(obs_horizon=int(dp_args.get("obs_horizon", 2))),
+        video_dir=None,
+    )
+
+
+def _load_dp_agent(env: Any, stack: dict[str, Any], args: argparse.Namespace, device: Any) -> tuple[Any, Any]:
+    torch = stack["torch"]
+    ms_train = stack["ms_train"]
+    ckpt = torch.load(args.dp_checkpoint, map_location=device)
+    train_args = dict(ckpt.get("args") or {})
+    train_args.update(
+        {
+            "env_id": train_args.get("env_id", "PegInsertionSide-v1"),
+            "control_mode": train_args.get("control_mode", "pd_ee_delta_pose"),
+            "sim_backend": train_args.get("sim_backend", "physx_cpu"),
+            "obs_horizon": int(train_args.get("obs_horizon", 2)),
+            "act_horizon": int(train_args.get("act_horizon", 8)),
+            "pred_horizon": int(train_args.get("pred_horizon", 16)),
+            "diffusion_step_embed_dim": int(train_args.get("diffusion_step_embed_dim", 64)),
+            "unet_dims": list(train_args.get("unet_dims", [64, 128, 256])),
+            "n_groups": int(train_args.get("n_groups", 8)),
+        }
+    )
+    dp_args = SimpleNamespace(**train_args)
+    ms_train.args = dp_args
+    ms_train.device = device
+    agent = ms_train.Agent(env, dp_args).to(device)
+    state = ckpt.get(args.dp_state_key)
+    if state is None:
+        raise KeyError(f"checkpoint {args.dp_checkpoint} missing state key {args.dp_state_key!r}")
+    agent.load_state_dict(state)
+    agent.eval()
+    return agent, dp_args
+
+
+def run_live_smoke(
+    *,
+    output_root: Path,
+    action_chunk_preview: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Run a gated short live smoke.
+
+    This restores the real simulator to the selected source prefix frame and
+    executes only a short predicted robot-action chunk, then optionally lets the
+    frozen DP act for one short horizon. It does not write object states into
+    the simulator after restore and does not execute a 300-step open loop.
+    """
+    import h5py
+    import imageio.v2 as imageio
+    import numpy as np
+
+    root = Path(__file__).resolve().parents[2]
+    stack = _import_live_control_stack(root)
+    torch = stack["torch"]
+    common = stack["common"]
+    trajectory_utils = stack["trajectory_utils"]
+
+    source_context = action_chunk_preview.get("source_context") or {}
+    source_h5_value = source_context.get("source_h5")
+    if not source_h5_value:
+        raise ValueError("live smoke requires source_h5 in action chunk preview")
+    source_h5 = Path(str(source_h5_value))
+    source_h5_contract = action_chunk_preview.get("source_h5_contract") or {}
+    traj_name = str(source_h5_contract.get("traj_name") or "traj_0")
+    chunk_start = int(action_chunk_preview["chunk_start"])
+    chunk_end = int(action_chunk_preview["chunk_end_exclusive"])
+    cosmos_chunk = action_chunk_preview.get("denormalized_robot_action_chunk") or []
+    if not cosmos_chunk:
+        raise ValueError("live smoke requires a non-empty denormalized robot-action chunk")
+
+    seed_text = " ".join(
+        str(x)
+        for x in [
+            source_context.get("source_uuid"),
+            source_context.get("source_row_uuid"),
+            action_chunk_preview.get("sample_name"),
+        ]
+        if x
+    )
+    reset_seed = _parse_seed_from_text(seed_text) or 0
+
+    env = _make_live_env(stack, Path(args.dp_manifest), args)
+    frames: list[Any] = []
+    cosmos_steps: list[dict[str, Any]] = []
+    dp_steps: list[dict[str, Any]] = []
+    video_path = output_root / "live_smoke_short_chunk.mp4"
+    try:
+        with h5py.File(source_h5, "r") as h5:
+            if traj_name not in h5:
+                traj_name = "traj_0" if "traj_0" in h5 else next(iter(h5.keys()))
+            group = h5[traj_name]
+            env_states = trajectory_utils.dict_to_list_of_dicts(group["env_states"])
+            source_slots = group.get("slots")
+            reset_frame = max(0, min(chunk_start, len(env_states) - 1))
+            reference_end_frame = max(0, min(chunk_end, len(env_states) - 1))
+            reference_summary = {}
+            if source_slots is not None:
+                reference_summary = {
+                    "reference_end_frame": reference_end_frame,
+                    "reference_inserted": bool(source_slots["inserted"][reference_end_frame])
+                    if "inserted" in source_slots
+                    else None,
+                    "reference_peg_head_at_hole": source_slots["peg_head_at_hole"][reference_end_frame].astype(float).tolist()
+                    if "peg_head_at_hole" in source_slots
+                    else None,
+                    "reference_hole_pose": source_slots["hole_pose"][reference_end_frame].astype(float).tolist()
+                    if "hole_pose" in source_slots
+                    else None,
+                    "reference_peg_pose": source_slots["peg_pose"][reference_end_frame].astype(float).tolist()
+                    if "peg_pose" in source_slots
+                    else None,
+                    "reference_tcp_pose": source_slots["tcp_pose"][reference_end_frame].astype(float).tolist()
+                    if "tcp_pose" in source_slots
+                    else None,
+                }
+
+        obs, _ = env.reset(seed=reset_seed)
+        base_env = _get_base_env(env)
+        base_env.set_state_dict(env_states[reset_frame])
+        before_eval = _live_eval(base_env)
+        if args.capture_live_video:
+            frames.append(_render_frame(env))
+
+        low, high = _action_space_bounds(env, args.robot_action_dim)
+        for local_i, action in enumerate(cosmos_chunk):
+            step_action, action_record = _prepare_step_action(
+                action,
+                low,
+                high,
+                bool(args.clip_live_actions),
+            )
+            obs, reward, terminated, truncated, info = env.step(step_action)
+            live = _live_eval(base_env)
+            cosmos_steps.append(
+                {
+                    "local_step": local_i,
+                    "action_index": chunk_start + local_i,
+                    "reward": jsonable(reward),
+                    "terminated": jsonable(terminated),
+                    "truncated": jsonable(truncated),
+                    "action": action_record,
+                    "live_eval": live,
+                }
+            )
+            if args.capture_live_video:
+                frames.append(_render_frame(env))
+            if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
+                break
+
+        after_cosmos_eval = _live_eval(base_env)
+
+        dp_resume_horizon = max(0, int(args.dp_resume_horizon))
+        dp_agent_loaded = False
+        if dp_resume_horizon > 0:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            agent, dp_args = _load_dp_agent(env, stack, args, device)
+            dp_agent_loaded = True
+            obs_tensor = common.to_tensor(obs, device)
+            with torch.no_grad():
+                action_seq = agent.get_action(obs_tensor)
+            if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu":
+                action_seq_np = action_seq.detach().cpu().numpy()
+            else:
+                action_seq_np = action_seq
+            for local_i in range(min(dp_resume_horizon, int(action_seq_np.shape[1]))):
+                step_action = action_seq_np[:, local_i]
+                obs, reward, terminated, truncated, info = env.step(step_action)
+                live = _live_eval(base_env)
+                dp_steps.append(
+                    {
+                        "local_step": local_i,
+                        "reward": jsonable(reward),
+                        "terminated": jsonable(terminated),
+                        "truncated": jsonable(truncated),
+                        "live_eval": live,
+                    }
+                )
+                if args.capture_live_video:
+                    frames.append(_render_frame(env))
+                if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
+                    break
+
+        final_eval = _live_eval(base_env)
+        video_written = False
+        if args.capture_live_video and frames:
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            imageio.mimsave(video_path, frames, fps=max(1, int(args.live_video_fps)))
+            video_written = True
+
+        report = {
+            "ok": True,
+            "source_h5": str(source_h5),
+            "traj_name": traj_name,
+            "reset_seed": int(reset_seed),
+            "reset_frame": int(reset_frame),
+            "chunk_start": int(chunk_start),
+            "chunk_end_exclusive": int(chunk_end),
+            "cosmos_chunk_steps_requested": len(cosmos_chunk),
+            "cosmos_chunk_steps_executed": len(cosmos_steps),
+            "dp_resume_horizon_requested": dp_resume_horizon,
+            "dp_resume_steps_executed": len(dp_steps),
+            "dp_agent_loaded": dp_agent_loaded,
+            "before_eval": before_eval,
+            "after_cosmos_eval": after_cosmos_eval,
+            "final_eval": final_eval,
+            "cosmos_steps": cosmos_steps,
+            "dp_steps": dp_steps,
+            "reference_summary": reference_summary,
+            "action_space_low": None if low is None else np.asarray(low, dtype=float).tolist(),
+            "action_space_high": None if high is None else np.asarray(high, dtype=float).tolist(),
+            "clip_live_actions": bool(args.clip_live_actions),
+            "video_path": str(video_path) if video_written else None,
+            "boundary": (
+                "Gated short live smoke. It starts from a restored source prefix "
+                "state, executes only a short predicted chunk plus optional DP "
+                "resume, and must be judged by live simulator metrics and video."
+            ),
+        }
+        write_manifest(output_root / "live_smoke_result.json", jsonable(report))
+        return report
+    finally:
+        env.close()
+
+
 def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argparse.Namespace, output_root: Path) -> dict[str, Any]:
     inspection = read_json(eval_root / "eval_artifact_inspection.json")
     samples = inspection.get("samples") or []
@@ -599,6 +982,10 @@ def main() -> int:
         "output_root": str(output_root),
         "max_episode_steps": args.max_episode_steps,
         "action_exec_horizon": args.action_exec_horizon,
+        "dp_resume_horizon": args.dp_resume_horizon,
+        "capture_live_video": args.capture_live_video,
+        "live_video_fps": args.live_video_fps,
+        "clip_live_actions": args.clip_live_actions,
         "action_preview_sample_index": args.action_preview_sample_index,
         "expected_video_frames": args.expected_video_frames,
         "expected_action_steps": args.expected_action_steps,
@@ -641,17 +1028,27 @@ def main() -> int:
         print(json.dumps({"closed_loop_preflight_ok": True, "mode": "preflight"}, indent=2))
         return 0
 
+    live_smoke = run_live_smoke(
+        output_root=output_root,
+        action_chunk_preview=action_chunk_preview,
+        args=args,
+    )
+    manifest["live_smoke"] = live_smoke
+    write_manifest(output_root / "closed_loop_preflight_manifest.json", jsonable(manifest))
     print(
         json.dumps(
             {
                 "closed_loop_preflight_ok": True,
-                "live_smoke_started": False,
-                "reason": "live_receding_smoke_not_implemented_in_this_guarded_entrypoint_yet",
+                "live_smoke_started": True,
+                "live_smoke_ok": bool(live_smoke.get("ok")),
+                "live_smoke_result": str(output_root / "live_smoke_result.json"),
+                "video_path": live_smoke.get("video_path"),
             },
             indent=2,
+            sort_keys=True,
         )
     )
-    return 51
+    return 0 if live_smoke.get("ok") else 52
 
 
 if __name__ == "__main__":

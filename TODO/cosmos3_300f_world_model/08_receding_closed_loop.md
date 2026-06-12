@@ -8,48 +8,28 @@
       and direct visual review of all validation sheets/videos.
 - [x] The latest fix1-recipe root
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
-      first ended at Slurm wall time after rank-0 iteration `743`. It saved
-      `iter_000000300` and `iter_000000600` before that time-limit stop.
-      On 2026-06-13 CST, training was resumed from `iter_000000600`, then
-      moved from a 2-H200 continuation to held 4-H200 Slurm job `127281` on
-      `server31`. The 2-H200 foreground training command was stopped by
-      allocation-internal process interruption/termination, not `scancel`;
-      its last durable checkpoint was still `iter_000000900`.
-- [x] The active fix1-recipe `iter_000000900` gate completed under:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000900`.
-      Strict artifacts and generated-RGB readout/profile passed structurally,
-      but direct agent review of all 10 ref/pred sheets failed the
-      controller handoff gate. Generated RGB broadly follows the scene, but
-      target hole, peg, and hand relative pose still drift visibly; generated
-      readout reports mean final hole error `0.1455857199` m, mean future
-      hole/peg/TCP RMSE `0.0790919085/0.0739520742/0.0702958154` m, and
-      robot-action future RMSE `0.7192880640`. `closed_loop_allowed=false`
-      is recorded with `visual_review_status=fail`.
-- [ ] Current continuation gate is active: held job `127289` on `server10`
-      runs step `127289.11` as the strict `iter_000001200`
-      eval/readout/profile/gate watcher. It is waiting for a stable
-      `iter_000001200` checkpoint and will write under:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200`.
-      This watcher is read-only with respect to SFT checkpoints.
-- [ ] A second read-only watcher is active for the planned `iter_000001500`
-      checkpoint. It runs as Slurm step `127288.22` on `server03` from tmux
-      `cosmos3_v7_733_iter1500_watch_0613`, writes under:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001500`,
-      and logs to:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter1500_watch_chain_20260613_0302.log`.
-      This uses a held 2-H200 allocation for future eval/readout/profile/gate
-      work, but it does not start a second training process against the same
-      checkpoint root.
-- [ ] A 2-H200 resume fallback watcher is active in tmux
-      `cosmos3_v7_733_2gpu_fallback_after4_0613` with log:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/sft_train_2gpu_fallback_after4_watch_20260613_0320.log`.
-      It uses `scripts/slurm/watch_cosmos3_resume_fallback_after_job.sh` to
-      monitor primary 4-H200 job `127281`. It does not start a second training
-      writer while job `127281` is still present. If the primary job disappears
-      before `iter_000001500` is reached, it will use held fallback allocation
-      `127286` to resume the same SFT root with `2` GPUs from the latest stable
-      checkpoint. This preserves the no-concurrent-writers rule while avoiding
-      idle waiting after an unexpected primary-job stop.
+      first ended at Slurm wall time after rank-0 iteration `743`, then was
+      resumed. It reached `iter_000001500`, failed visual handoff, and was
+      auto-resumed on 4-H200 Slurm job `127281` (`server31`) toward
+      `iter_000002100`. The current 4-H200 job is the only SFT checkpoint
+      writer.
+- [x] The active fix1-recipe gates through `iter_000001500` completed and are
+      controller-negative. Strict artifacts and generated-RGB readout/profile
+      passed structurally at `iter_000001500`, but direct review failed sheets
+      `03`, `04`, `08`, and `09`: late robot/peg/target relative geometry
+      drifts and is not DP-resumable. `closed_loop_allowed=false` is recorded
+      with `visual_review_status=fail`.
+- [ ] Current continuation gate is active at `iter_000001800`. Main watcher
+      `cosmos3_v7_733_iter1800_watch_0613` runs on held job `127288` and writes
+      `eval_full_episode_wam_iter_000001800`; extra30 watcher
+      `cosmos3_v7_733_iter1800_extra30_2gpu_0613` runs on held job `127286`
+      and writes `eval_full_episode_wam_iter_000001800_extra30_2gpu_20260613`.
+      Both are read-only with respect to SFT checkpoints.
+- [x] The old 2-H200 fallback/watch logic is no longer the active path for
+      `iter_000001500`; the 4-H200 auto-resume-after-checkpoint watcher
+      launched the current `1500 -> 2100` continuation without concurrent
+      checkpoint writers. Any future fallback must still preserve the
+      no-concurrent-writers rule.
 - [x] The already evaluated latest fix1-recipe `iter_000000300` and
       `iter_000000600` checkpoints are not controller-ready. They preserve
       prefix conditions and pass the 301-frame / 300-action structural gate,
@@ -83,6 +63,16 @@
       `scripts/world_model/run_cosmos3_receding_closed_loop.py`. They refuse
       login-node execution, record checkpoint/condition/DP/gate manifests, and
       stop before simulator work when the gate fails.
+- [x] Implement the gate-passed live smoke branch in
+      `scripts/world_model/run_cosmos3_receding_closed_loop.py`. If all gates
+      pass and `MODE=smoke`, the entry point now constructs the real ManiSkill
+      state-DP env inside a compute allocation, restores the selected source
+      H5 state at `chunk_start`, executes only a short `<=8` de-normalized
+      Cosmos robot-action chunk, optionally executes one short frozen-DP resume
+      horizon, records action-space clipping/validation, live
+      `base_env.evaluate()` metrics, and writes a short video when requested.
+      This branch has not been run as controller evidence yet because current
+      SFT gates still fail visual review.
 - [x] Smoke the guarded preflight inside held compute allocation `127120` as a
       single Slurm task (`step 127120.7`) on latest fix1-recipe iter300. The
       DP manifest contract and full-episode condition/normalization contract
@@ -129,14 +119,22 @@
       `301` frames, and TCP/peg/hole slot trajectories with `301` frames.
       This is a structural preflight only; it does not restore simulator
       state or prove controller success.
-- [ ] Use the frozen static DP checkpoint only through its real ManiSkill
+- [x] Smoke-check the updated `MODE=smoke` failed-gate behavior on held compute
+      job `127288`, step `127288.24`, using `iter_000001500` with
+      `VISUAL_REVIEW_STATUS=fail`. The wrapper exited with expected code `40`,
+      reported `closed_loop_gate_blocked`, recovered source context and source
+      H5, and did not write `live_smoke_result.json`; therefore the new
+      gate-passed live branch cannot be reached through a failed visual gate.
+- [x] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
       Its manifest fixes `PegInsertionSide-v1`, `pd_ee_delta_pose`,
       `obs_horizon=2`, `act_horizon=8`, and `max_episode_steps=300`. Current
       code validates the saved checkpoint format and selected `ema_agent`
-      state key; actual DP policy construction and env interaction remain
-      blocked until a future Cosmos checkpoint passes the closed-loop gate.
+      state key before the gate, and the gate-passed `MODE=smoke` branch loads
+      the same DP agent for the optional short DP-resume horizon. Actual DP
+      env interaction remains unrun until a future Cosmos checkpoint passes
+      the closed-loop gate.
 - [ ] Observe live RGB/state, build a causal Cosmos prefix from the latest
       observed frames/state, predict the remaining or short future horizon,
       execute only a short action prefix, then reobserve and refresh. The
@@ -149,18 +147,18 @@
 
 ## Cosmos Action Contract
 
-- [ ] Cosmos WAM eval output is a normalized `300x32` sequence. Columns
+- [x] Cosmos WAM eval output is a normalized `300x32` sequence. Columns
       `0..6` are robot actions; columns `7..31` are predicted task-state
       sidecars.
-- [ ] Before live execution, load
+- [x] Before live execution, load
       `full_episode_wam_conditions_fix3_v7_733_rgb_300step_20260612_0245/normalization_stats.json`
       and de-normalize only columns `0..6` with the matching vector-name
       stats. Clip/validate against the ManiSkill action space before
       `env.step`.
       Current preflight implements the de-normalization preview and verifies
-      finite `<=8` robot-action chunks, but action-space clipping/validation
-      against the live ManiSkill env remains pending until the gate permits
-      live simulator construction.
+      finite `<=8` robot-action chunks. The gate-passed live branch resolves
+      the ManiSkill action space, records pre-clip violation, and clips only
+      when `CLIP_LIVE_ACTIONS=true`.
 - [ ] Treat columns `7..31` as predicted task-state diagnostics and controller
       scoring/readout context only. They must not be written into simulator
       state, used as oracle object poses, or used to bypass RGB/state
@@ -171,13 +169,12 @@
 
 ## Implementation Steps After A Passed Gate
 
-- [ ] Add a compute-node-only wrapper, e.g.
+- [x] Add a compute-node-only wrapper, e.g.
       `scripts/slurm/run_cosmos3_receding_closed_loop_in_allocation.sh`, that
       records job id, checkpoint path, condition root, DP checkpoint, action
       normalization stats, validation seeds/scenarios, and evidence boundary.
-      Current implementation is a guarded preflight only. It does not run
-      live controller smoke until a future SFT checkpoint passes the generated
-      artifact/readout/visual gate.
+      Current implementation is guarded by generated artifact/readout/visual
+      gates and can run the short live smoke only after those gates pass.
 - [ ] Add a Python entry point, e.g.
       `scripts/world_model/run_cosmos3_receding_closed_loop.py`, with an
       initial one-env smoke mode:
