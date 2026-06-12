@@ -43,12 +43,12 @@
 - [x] 2026-06-13 continuation status: the current active root
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
       has resumed beyond the earlier wall-time stop. The 4-H200 Slurm job
-      `127281` on `server31` is the only active SFT checkpoint writer and was
-      observed continuing past rank-0 iteration `1238` after saving
-      `iter_000001200`. Do not start a second two-GPU SFT writer into the same
-      root while this job is alive; a 2-H200 fallback watcher exists only to
-      resume from the latest checkpoint if the 4-H200 writer disappears before
-      the target checkpoint.
+      `127281` on `server31` is the only active SFT checkpoint writer. It
+      saved `iter_000001500`, finished validation, and was auto-resumed from
+      that checkpoint toward `iter_000002100`. Do not start a second two-GPU
+      SFT writer into the same root while this job is alive; spare 2-H200 jobs
+      may run read-only eval/watchers with independent eval roots, or resume
+      only after the 4-H200 writer disappears.
 - [x] Iter1200 strict eval/readout/profile completed for the current root.
       Structure passed for `10` samples: generated/reference videos stayed
       `301/301`, action tensors stayed `300x32`, and `strict_failures=[]`.
@@ -73,12 +73,21 @@
       `0.0504/0.0536/0.0512` m, and direct sheet review still shows unsafe
       target/peg/hand relative-pose errors in fast-shift/sine/static cases.
 - [x] The same 2-H200 allocation `127286` is now reserved for a read-only
-      `iter_000001500` extra-30 watcher in tmux
-      `cosmos3_v7_733_iter1500_extra30_2gpu_0613`. It waits for the same
-      `iter_000001500` checkpoint as the main watcher, writes to
-      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`, and then
-      runs generated-RGB readout/profile. It remains a read-only eval path, not
-      a concurrent SFT checkpoint writer.
+      `iter_000001500` extra-30 panel, now complete at
+      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`. Strict
+      structure/readout passed for `30/30` samples, but representative visual
+      review still shows fast-shift/sine/static relative-geometry failures, so
+      it does not override the failed main gate.
+- [x] Iter1500 main strict eval/readout/profile completed for `10/10` samples,
+      but visual review failed sheets `03`, `04`, `08`, and `09`. The file
+      `eval_full_episode_wam_iter_000001500/manual_visual_review.json` records
+      the per-sheet verdict, and
+      `eval_full_episode_wam_iter_000001500/closed_loop_gate_visual_review.json`
+      records `closed_loop_allowed=false`.
+- [x] Iter1800 watchers are active and read-only: tmux
+      `cosmos3_v7_733_iter1800_watch_0613` on job `127288` waits for the main
+      10-sample gate, and tmux `cosmos3_v7_733_iter1800_extra30_2gpu_0613` on
+      job `127286` waits for the two-GPU extra30 panel.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

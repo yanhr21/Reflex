@@ -5,17 +5,16 @@
 - [x] The current authoritative v7_733 follow-up Cosmos3 SFT is the fix1-recipe
       root:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`.
-      It used the overfit-approved action recipe and ended at Slurm wall time
-      after rank-0 iteration `743`. The frozen source is the user-override
-      `733`-row v7 DP source, not the old full1000/fix1 chain and not a
-      hard-dynamic baseline.
-- [x] Current fix1-recipe v7_733 review gates completed: `iter_000000300` and
-      `iter_000000600` strict generated artifacts, generated-RGB
-      readout/profile, and direct visual review. Both passed structural
-      length/action checks but failed controller/DP readiness. Iter300 is the
-      best qualitative sanity checkpoint so far but remains imprecise for
-      handoff; iter600 is worse on rollout/readout/visual evidence despite
-      lower validation loss.
+      It used the overfit-approved action recipe. The frozen source is the
+      user-override `733`-row v7 DP source, not the old full1000/fix1 chain and
+      not a hard-dynamic baseline.
+- [x] Current fix1-recipe v7_733 review gates completed through
+      `iter_000001500`: strict generated artifacts, generated-RGB
+      readout/profile, and direct visual review passed structural
+      length/action checks but failed controller/DP readiness. Iter1500 has
+      coherent videos and improved generated-RGB readout versus some earlier
+      gates, but sheets `03`, `04`, `08`, and `09` still show non-resumable
+      late robot/peg/target relative geometry.
 - [x] Current fix1-recipe `iter_000000300` was also re-evaluated with the
       corrected active-v7 validation panel:
       `eval_full_episode_wam_iter_000000300_v7panel`. This panel covers all
@@ -30,13 +29,12 @@
       fix1-recipe root had saved only `iter_000000300` and `iter_000000600`.
       Old `normactive_clip1` iter900/iter1200 notes remain historical negative
       diagnostics and must not be treated as the active review gate.
-- [ ] Current 2026-06-13 continuation gate is pending. Training has resumed
-      from `iter_000000600` in held Slurm job `127120` on `server40`, while
-      held job `127289` on `server10` runs step `127289.0` as a strict
-      `iter_000000900` eval/readout/profile/gate watcher. This watcher is
-      read-only with respect to SFT checkpoints and writes under:
-      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000900`.
-      No controller or DP integration may start until this gate produces
+- [ ] Current 2026-06-13 continuation gate is pending at `iter_000001800`.
+      Training has resumed from `iter_000001500` toward `iter_000002100` in
+      held Slurm job `127281` on `server31`. Read-only `iter_000001800`
+      watchers are active in tmux `cosmos3_v7_733_iter1800_watch_0613` on job
+      `127288` and `cosmos3_v7_733_iter1800_extra30_2gpu_0613` on job `127286`.
+      No controller or DP integration may start until a future gate passes
       strict artifacts, generated-RGB readout/profile, and explicit visual
       review evidence.
 - [ ] No controller or DP integration may be launched from the current v7_733

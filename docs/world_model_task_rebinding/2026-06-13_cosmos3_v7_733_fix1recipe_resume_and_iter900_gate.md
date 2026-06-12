@@ -231,3 +231,103 @@ The check verified:
 
 This is only a structural guard before live smoke. It does not restore
 simulator state, execute DP, or prove controller success.
+
+## Iteration 1500 Gate And Continuation
+
+The 4-H200 run on Slurm job `127281` saved
+`iter_000001500` at `2026-06-13 05:48 CST` and completed validation. The
+validation loss was `0.121415`, and the logged final average loss was
+`0.1146170124411583`. After the checkpoint completed and the original training
+step exited, the in-allocation watcher
+`cosmos3_v7_733_auto_resume4_after1500_to2100_0613` resumed from
+`iter_000001500` toward `iter_000002100` in the same held 4-H200 allocation.
+
+This avoids a second concurrent checkpoint writer. The spare 2-H200 jobs are
+used only for read-only eval/watchers with independent eval roots while the
+4-H200 writer is alive.
+
+The main generated eval root is:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001500`
+
+Strict artifact/readout/profile checks passed structurally:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- `10/10` generated-RGB readout samples strict-ok
+- mean future PSNR `21.0053897452` dB
+- mean action RMSE `0.4544845864`
+- mean robot-action future RMSE `0.7124409493`
+- mean state-sidecar future RMSE `0.4863403918`
+- generated-RGB mean final hole position error `0.0950135280` m
+- mean future hole/peg/TCP RMSE `0.0543056440` / `0.0559011667` /
+  `0.0520678853` m
+- mean future peg-head-hole RMSE `0.0358502661` m
+
+Manual visual review still failed the controller handoff gate. The agent opened
+all 10 review sheets. Sheets `03`, `04`, `08`, and `09` are not DP-resumable:
+
+- `03_insert_resume_hole_late_fast_shift`: late prediction drifts the
+  robot/peg to the side of the block instead of preserving the hole-face
+  insertion relation.
+- `04_target_pre_motion_hole_late_sine`: late robot/peg/target relative
+  geometry is visibly wrong.
+- `08_static_monitor_none` and `09_static_late_monitor_none`: static target
+  cases drift in late/final frames despite no target motion.
+
+The review artifact is:
+
+`eval_full_episode_wam_iter_000001500/manual_visual_review.json`
+
+The closed-loop gate file is:
+
+`eval_full_episode_wam_iter_000001500/closed_loop_gate_visual_review.json`
+
+It records `visual_review_status=fail`,
+`closed_loop_allowed=false`, and reason
+`explicit_visual_review_not_passed`. Therefore `iter_000001500` is not a
+controller/DP integration checkpoint.
+
+## Iteration 1500 Extra-30 Two-GPU Panel
+
+The spare 2-H200 allocation on Slurm job `127286` completed a read-only
+extra-30 panel at:
+
+`eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`
+
+It did not write checkpoints, touch `latest_checkpoint.txt`, or replace the
+4-H200 SFT writer. The panel passed structural checks:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- `30/30` generated-RGB readout samples strict-ok
+- mean future PSNR `21.7650756531` dB
+- mean action RMSE `0.4336619230`
+- mean robot-action future RMSE `0.6891195786`
+- mean state-sidecar future RMSE `0.4483521834`
+- generated-RGB mean final hole position error `0.0771530019` m
+- mean future hole/peg/TCP RMSE `0.0461612608` / `0.0506419007` /
+  `0.0485433161` m
+- mean future peg-head-hole RMSE `0.0313440083` m
+
+Representative visual review still confirms the same failure family. The
+`hole_late_fast_shift`, `hole_late_sine`, and `none` static sheets preserve
+object appearance but do not preserve the final robot/peg/hole relative
+geometry needed for DP resume. This extra panel is diagnostic only and does
+not override the failed main visual gate.
+
+## Iteration 1800 Watchers
+
+Two read-only watchers were started for the next checkpoint:
+
+- Main gate: tmux `cosmos3_v7_733_iter1800_watch_0613`, Slurm job `127288`,
+  target checkpoint `iter_000001800`, output root
+  `eval_full_episode_wam_iter_000001800`, `10` samples.
+- Extra panel: tmux `cosmos3_v7_733_iter1800_extra30_2gpu_0613`, Slurm job
+  `127286`, target checkpoint `iter_000001800`, output root
+  `eval_full_episode_wam_iter_000001800_extra30_2gpu_20260613`, `30` samples.
+
+Both watchers run inside compute-node Slurm steps, wait for a stable checkpoint,
+run strict full-episode eval, generated-RGB readout, failure profiling, and a
+pre-visual closed-loop gate. They are read-only paths and must not be confused
+with a second SFT training writer.

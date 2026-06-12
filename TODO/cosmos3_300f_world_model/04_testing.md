@@ -4,13 +4,13 @@
 
 - [x] 2026-06-13 current continuation update for
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`:
-      the run is live again on Slurm job `127281` (`server31`, `4xH200`) and
-      has saved `iter_000001200`; the foreground training log continued past
-      rank-0 iteration `1238` with finite losses and about `17.4s/iter`.
-      The 4-H200 job is the only SFT checkpoint writer. Do not start a
-      simultaneous 2-H200 writer into this same root; the held 2-H200
-      allocation is reserved for fallback after the 4-H200 job disappears or
-      for read-only evaluation.
+      the run is live again on Slurm job `127281` (`server31`, `4xH200`).
+      It saved `iter_000001500`, finished validation, and was auto-resumed
+      from that checkpoint toward `iter_000002100` by
+      `cosmos3_v7_733_auto_resume4_after1500_to2100_0613`. The 4-H200 job is
+      the only SFT checkpoint writer. Do not start a simultaneous 2-H200 SFT
+      writer into this same root; the held 2-H200 allocations are for read-only
+      eval/watchers or fallback only after the active 4-H200 writer disappears.
 - [x] Iter1200 gate for the current root completed and is controller-negative.
       Strict eval artifacts passed (`10` samples, `301/301` videos,
       `300x32` actions, `strict_failures=[]`), and generated-RGB
@@ -32,12 +32,30 @@
       relative-geometry errors. This confirms the failed iter1200 closed-loop
       gate rather than relaxing it.
 - [x] A 2-H200 read-only watcher for `iter_000001500` extra-30 eval is now
-      running in tmux `cosmos3_v7_733_iter1500_extra30_2gpu_0613`, Slurm step
-      `127286.22`, with output root
-      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`. It waits
-      for the checkpoint, then runs strict eval, generated-RGB readout, and
-      readout failure profile from the same held allocation. It does not write
-      SFT checkpoints.
+      complete. It ran from held job `127286` with output root
+      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`. Strict
+      eval/readout passed structurally for `30/30` samples, with mean future
+      PSNR `21.7651`, mean action RMSE `0.4337`, robot-action future RMSE
+      `0.6891`, state-sidecar future RMSE `0.4484`, generated-RGB mean final
+      hole error `0.0772` m, and future hole/peg/TCP RMSE
+      `0.0462/0.0506/0.0485` m. Representative visual review still shows the
+      same fast-shift/sine/static relative-geometry failure, so this extra
+      panel does not override the failed main visual gate.
+- [x] Iter1500 main gate is controller-negative. Strict eval/readout/profile
+      passed structurally for `10/10` samples, with mean future PSNR
+      `21.0054`, mean action RMSE `0.4545`, robot-action future RMSE `0.7124`,
+      state-sidecar future RMSE `0.4863`, generated-RGB mean final hole error
+      `0.0950` m, and future hole/peg/TCP RMSE `0.0543/0.0559/0.0521` m.
+      Direct visual review failed sheets `03`, `04`, `08`, and `09`: late
+      robot/peg/target geometry drifts and is not DP-resumable. The gate file
+      `eval_full_episode_wam_iter_000001500/closed_loop_gate_visual_review.json`
+      records `closed_loop_allowed=false`.
+- [x] Iter1800 read-only watchers are active. Main 10-sample gate watcher runs
+      in tmux `cosmos3_v7_733_iter1800_watch_0613` on job `127288`, and the
+      extra30 two-GPU watcher runs in tmux
+      `cosmos3_v7_733_iter1800_extra30_2gpu_0613` on job `127286`. Both wait
+      for `iter_000001800`, write independent eval roots, and do not write SFT
+      checkpoints.
 - [x] Current source line is the fix3 v7 user-override `733`-row SFT source.
       The first SFT root
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245`
