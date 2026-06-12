@@ -88,10 +88,15 @@
       `cosmos3_v7_733_iter1800_watch_0613` on job `127288` waits for the main
       10-sample gate. The earlier extra30 watcher on job `127286` was stopped
       by interrupting the foreground tmux/srun command, not by `scancel`, so
-      the 2-H200 allocation stayed alive. That 2-H200 allocation now runs tmux
-      `cosmos3_v7_733_resume2_fallback_to2100_0613` as a no-concurrent-writer
-      fallback: it only starts SFT if the 4-H200 writer job `127281`
-      disappears before `iter_000002100`.
+      the 2-H200 allocation stayed alive. It was first converted to a
+      no-concurrent-writer fallback, then upgraded to an active independent
+      two-GPU shadow continuation in tmux
+      `cosmos3_v7_733_shadow2gpu_from1500_to2100_0613`. The shadow output root
+      is
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`.
+      It hardlinks the main `iter_000001500` checkpoint into a separate root,
+      loaded that checkpoint successfully in iteration `1500`, and trains
+      toward `iter_000002100` without writing the 4-H200 main root.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

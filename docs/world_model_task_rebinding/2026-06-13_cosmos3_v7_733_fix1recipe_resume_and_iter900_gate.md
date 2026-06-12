@@ -343,6 +343,25 @@ At `2026-06-13T06:31:55+08:00`, job `127286` on `server40` had only its
 if that primary writer disappears while `latest_checkpoint.txt` is still below
 the target iteration.
 
+After checking the idle-GPU state, the two-GPU fallback was upgraded to an
+active shadow continuation instead of keeping the cards idle. The foreground
+fallback tmux command was interrupted, preserving allocation `127286`. A new
+root was created:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`
+
+Its `iter_000001500` checkpoint is a hardlink copy of the main checkpoint,
+with an independent `latest_checkpoint.txt`, so the branch can resume from the
+same weights without duplicating the 55G checkpoint or writing into the main
+4-H200 root. Tmux `cosmos3_v7_733_shadow2gpu_from1500_to2100_0613` launched
+on Slurm job `127286`, step `127286.27`, with `NPROC_PER_NODE=2`,
+`DATA_PARALLEL_SHARD_DEGREE=2`, `MAX_ITER=2100`, and the same enforced fix1
+action recipe. The log confirms `strict_alignment_ok=true`,
+`strict_action_target_ok=true`, `fix1_action_recipe_check=passed`, and
+`Loaded checkpoint ... in iteration 1500`. This shadow run is a backup/extra
+continuation branch; the 4-H200 root remains the primary gate source unless it
+fails or the shadow produces stronger inspected evidence later.
+
 ## Closed-Loop Smoke Preparation
 
 The guarded closed-loop entry point was extended while the SFT continued

@@ -34,9 +34,13 @@
       held Slurm job `127281` on `server31`. Read-only `iter_000001800`
       main-gate watcher is active in tmux
       `cosmos3_v7_733_iter1800_watch_0613` on job `127288`. The 2-H200 job
-      `127286` was reallocated from the optional extra30 panel to tmux
-      `cosmos3_v7_733_resume2_fallback_to2100_0613`, which waits for the
-      4-H200 writer to disappear before starting any two-GPU SFT continuation.
+      `127286` was reallocated from the optional extra30 panel to an
+      independent shadow SFT continuation in tmux
+      `cosmos3_v7_733_shadow2gpu_from1500_to2100_0613`. This shadow branch
+      starts from a hardlinked copy of the main `iter_000001500` checkpoint and
+      writes only its own 2-GPU output root, so it keeps the no-concurrent-writer
+      rule for the 4-H200 main root while preventing the spare allocation from
+      sitting idle.
       No controller or DP integration may start until a future gate passes
       strict artifacts, generated-RGB readout/profile, and explicit visual
       review evidence.
