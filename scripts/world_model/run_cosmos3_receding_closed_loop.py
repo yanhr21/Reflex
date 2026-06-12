@@ -249,6 +249,90 @@ def run_gate(args: argparse.Namespace, output_root: Path) -> dict[str, Any]:
     return read_json(gate_json)
 
 
+def resolve_eval_source_context(eval_root: Path, sample_name: str) -> dict[str, Any]:
+    """Recover source trajectory metadata for a generated eval sample.
+
+    The strict eval artifact focuses on generated/reference outputs. The live
+    smoke path needs the causal source trajectory too, so recover it through the
+    eval input manifest and the original condition JSONL row.
+    """
+    context: dict[str, Any] = {
+        "sample_name": sample_name,
+        "eval_input_manifest": str(eval_root / "eval_input_manifest.json"),
+        "manifest_sample_found": False,
+        "condition_row_found": False,
+        "source_h5": None,
+    }
+    manifest_path = eval_root / "eval_input_manifest.json"
+    if not manifest_path.is_file():
+        context["missing"] = "eval_input_manifest"
+        return context
+
+    manifest = read_json(manifest_path)
+    samples = manifest.get("samples") or []
+    manifest_sample = next((s for s in samples if s.get("name") == sample_name), None)
+    if not isinstance(manifest_sample, dict):
+        context["missing"] = "sample_in_eval_input_manifest"
+        return context
+
+    context["manifest_sample_found"] = True
+    for key in [
+        "source_row_uuid",
+        "source_uuid",
+        "source_jsonl",
+        "scenario",
+        "prefix_role",
+        "prefix_frame_index",
+        "condition_prefix_frames",
+        "reference_video_path",
+        "reference_action_path",
+        "state_target_path",
+        "task_label_path",
+    ]:
+        if key in manifest_sample:
+            context[key] = manifest_sample[key]
+
+    source_jsonl = manifest_sample.get("source_jsonl")
+    source_row_uuid = manifest_sample.get("source_row_uuid")
+    if not source_jsonl or not source_row_uuid:
+        context["missing"] = "source_jsonl_or_source_row_uuid"
+        return context
+
+    source_path = Path(str(source_jsonl))
+    if not source_path.is_file():
+        context["missing"] = "source_jsonl_file"
+        return context
+
+    with source_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            row = json.loads(line)
+            if row.get("uuid") != source_row_uuid:
+                continue
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            context["condition_row_found"] = True
+            context["source_h5"] = row.get("source_h5") or metadata.get("source_h5")
+            context["condition_row"] = {
+                "uuid": row.get("uuid"),
+                "source_uuid": row.get("source_uuid"),
+                "split": row.get("split"),
+                "scenario": row.get("scenario") or metadata.get("scenario"),
+                "prefix_role": row.get("prefix_role"),
+                "prefix_frame_index": row.get("prefix_frame_index"),
+                "condition_prefix_frames": row.get("condition_prefix_frames"),
+                "rgb_video": row.get("rgb_video"),
+                "action_path": row.get("action_path"),
+                "state_target_path": row.get("state_target_path"),
+                "task_label_path": row.get("task_label_path"),
+                "task_summary_path": row.get("task_summary_path"),
+                "num_rgb_frames": row.get("num_rgb_frames"),
+                "num_action_steps": row.get("num_action_steps"),
+                "sidecar_target_mode": row.get("sidecar_target_mode"),
+            }
+            break
+
+    return context
+
+
 def _to_float_matrix(value: Any) -> list[list[float]]:
     if not isinstance(value, list) or not value:
         raise ValueError("predicted action is not a non-empty list")
@@ -283,6 +367,7 @@ def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argp
     sample_index = max(0, min(args.action_preview_sample_index, len(samples) - 1))
     sample = samples[sample_index]
     sample_name = sample["name"]
+    source_context = resolve_eval_source_context(eval_root, sample_name)
     sample_outputs = read_json(eval_root / "inference" / sample_name / "sample_outputs.json")
     outputs = sample_outputs.get("outputs") or []
     content = (outputs[0].get("content") if outputs else None) or {}
@@ -321,6 +406,7 @@ def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argp
     preview = {
         "sample_index": sample_index,
         "sample_name": sample_name,
+        "source_context": source_context,
         "prefix_role": sample.get("prefix_role"),
         "scenario": sample.get("scenario"),
         "prefix_frame_index": sample.get("prefix_frame_index"),
@@ -428,6 +514,8 @@ def main() -> int:
         failures.append("action_chunk_preview_failed")
     if not gate.get("closed_loop_allowed"):
         failures.append("closed_loop_gate_blocked")
+    if args.mode == "smoke" and not action_chunk_preview.get("source_context", {}).get("source_h5"):
+        failures.append("live_source_h5_missing")
 
     if failures:
         print(json.dumps({"closed_loop_preflight_ok": False, "failures": failures}, indent=2))

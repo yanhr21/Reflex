@@ -80,6 +80,15 @@
       passed; the wrapper still exited with expected code `40` solely because
       the Cosmos visual gate remains failed. No live `env.step` rollout was
       started.
+- [x] Extend the guarded preflight to recover live-smoke source context from
+      eval artifacts. The script now maps an eval sample through
+      `eval_input_manifest.json` and the original condition JSONL row to
+      recover `source_h5`, `source_uuid`, scenario, prefix role/frame, RGB
+      path, action path, and task label paths. A local read-only check on
+      `iter_000000600` recovered
+      `canonical_h5/peg_drop_seed705165_idx1029.fix3/peg_drop_seed705165_idx1029.h5`
+      for the first eval sample. In `mode=smoke`, missing `source_h5` is now a
+      hard preflight failure before any live simulator work can start.
 - [ ] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
