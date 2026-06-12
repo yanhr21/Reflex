@@ -41,6 +41,12 @@
       writes only its own 2-GPU output root, so it keeps the no-concurrent-writer
       rule for the 4-H200 main root while preventing the spare allocation from
       sitting idle.
+- [ ] The original read-only `iter1800` eval watcher on Slurm step `127288.23`
+      was terminated by Slurm before the checkpoint existed. Replacement tmux
+      `cosmos3_v7_733_iter1800_eval_request_on_ckpt_0613` is active as a
+      checkpoint-file poller and will request a fresh 1-H200 allocation only
+      after `iter_000001800` is saved. This avoids idle GPU allocation while
+      preserving the strict eval/readout/visual-gate sequence.
       No controller or DP integration may start until a future gate passes
       strict artifacts, generated-RGB readout/profile, and explicit visual
       review evidence.

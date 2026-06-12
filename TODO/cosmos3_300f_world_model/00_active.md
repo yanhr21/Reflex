@@ -97,6 +97,14 @@
       It hardlinks the main `iter_000001500` checkpoint into a separate root,
       loaded that checkpoint successfully in iteration `1500`, and trains
       toward `iter_000002100` without writing the 4-H200 main root.
+- [x] The old read-only `iter1800` watcher step `127288.23` on `server03` was
+      Slurm-terminated at `2026-06-13T06:46:34+08:00` while waiting for the
+      checkpoint. To avoid holding a GPU allocation idle, replacement tmux
+      `cosmos3_v7_733_iter1800_eval_request_on_ckpt_0613` now only polls the
+      checkpoint files from the login node and requests a fresh 1-H200
+      `salloc` eval allocation after `iter_000001800` exists and is stable.
+      This login watcher performs no rollout/render/training work before the
+      compute allocation starts.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

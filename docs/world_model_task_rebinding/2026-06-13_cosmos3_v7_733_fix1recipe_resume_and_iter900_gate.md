@@ -362,6 +362,22 @@ action recipe. The log confirms `strict_alignment_ok=true`,
 continuation branch; the 4-H200 root remains the primary gate source unless it
 fails or the shadow produces stronger inspected evidence later.
 
+The first read-only `iter1800` watcher allocation `127288` did not survive long
+enough to see the checkpoint. Its log ends with Slurm terminating step
+`127288.23` at `2026-06-13T06:46:34+08:00` while
+`latest_checkpoint.txt` was still `iter_000001500`. No eval artifacts were
+produced by that terminated watcher.
+
+To avoid another idle GPU allocation, a replacement login-side request watcher
+was started in tmux `cosmos3_v7_733_iter1800_eval_request_on_ckpt_0613` using
+`scripts/slurm/watch_cosmos3_checkpoint_then_salloc_eval.sh`. The script only
+polls `latest_checkpoint.txt` and the target checkpoint directory on the login
+node. After `iter_000001800` exists and remains stable, it requests a fresh
+1-H200 `salloc` allocation and then runs the standard strict eval, generated-RGB
+readout, readout profile, and pre-visual closed-loop gate inside the compute
+allocation. The first poll at `2026-06-13T06:58:54+08:00` reported
+`latest=iter_000001500` and `has_target_dir=no`.
+
 ## Closed-Loop Smoke Preparation
 
 The guarded closed-loop entry point was extended while the SFT continued
