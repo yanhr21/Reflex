@@ -51,11 +51,26 @@
       future peg-head-hole RMSE `0.0318` m. Direct review of all `10` sheets
       found no old geometry-collapse/white-fog failure, but several final
       relative poses are still too imprecise for closed-loop handoff.
-- [ ] Continue monitoring to `iter_000000600`; strict eval watcher
-      `cosmos3_v7_733_full_iter600_eval_watch_127120` is active on held aux
-      allocation `127120`. Do not start controller/DP integration until
-      generated videos, action metrics, readout metrics, and visual review pass
-      at a checkpoint.
+- [x] Iter600 strict eval/readout/profile completed in held auxiliary
+      allocation `127120` on `server40`. Structural gates still pass for
+      `10` samples: generated/reference videos are `301/301`, actions are
+      `300x32`, and `strict_failures=[]`. However, it is worse than iter300
+      on controller-facing metrics despite lower validation loss:
+      validation loss `0.131243`, mean future PSNR `20.2910`, robot-action
+      future RMSE `0.9831`, state-sidecar future RMSE `0.6805`, generated-RGB
+      mean final hole error `0.1058` m, future hole/peg/TCP RMSE
+      `0.0603/0.0795/0.0762` m, and future peg-head-hole RMSE `0.0457` m.
+      The agent opened all `10` review sheets. There is no old global
+      white-fog collapse, but several samples show block/robot relative-pose
+      drift, peg/contact discontinuity, or target-position errors that make
+      DP resume unsafe. Do not start controller/DP integration from iter600.
+- [ ] Continue the live SFT inside the already held 4-H200 allocation without
+      cancelling it. The allocation is near its one-day wall time, so an
+      iter900 checkpoint is not expected unless the allocation naturally runs
+      long enough. If a later checkpoint appears, run the same strict
+      eval/readout/visual gate before any controller work; otherwise preserve
+      iter300 as the current best qualitative sanity checkpoint and keep
+      controller gated.
 - [x] Stop the rejected 128-action / 129-frame chunked SFT job and its waiting
       action-eval/readout watcher sessions.
 - [x] Move old method results, old evidence conclusions, and old logs out of

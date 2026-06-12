@@ -28,12 +28,27 @@
       `126210.41` on `server56` continues training, and auxiliary job `127120`
       on `server40` ran strict eval, generated-RGB readout, failure profile,
       and direct sheet review for `iter_000000300`.
-- [ ] Active iter600 gate for the current fix1-recipe full run: tmux
-      `cosmos3_v7_733_full_iter600_eval_watch_127120` is waiting in held
-      auxiliary allocation `127120` for checkpoint `iter_000000600`, then will
-      run strict 10-sample full-episode eval under the same `301` frame /
-      `300x32` action contract. After strict eval passes, run generated-RGB
-      readout/profile and inspect sheets before any controller/DP step.
+- [x] Iter600 gate for the current fix1-recipe full run completed in held
+      auxiliary allocation `127120` after checkpoint `iter_000000600` was
+      saved. Strict full-episode eval preserved the same `301` frame /
+      `300x32` action contract and passed structurally for all `10` samples
+      with `strict_failures=[]`. Generated-RGB readout/profile also passed
+      structure.
+- [x] Iter600 result is controller-negative. Although validation loss improved
+      to `0.131243`, the controller-facing metrics worsened versus iter300:
+      mean future video PSNR `20.2910` vs `21.6543`, robot-action future RMSE
+      `0.9831` vs `0.6354`, state-sidecar future RMSE `0.6805` vs `0.3534`,
+      mean final hole error `0.1058` m vs `0.0655` m, future hole RMSE
+      `0.0603` m vs `0.0392` m, and future peg/TCP RMSE
+      `0.0795/0.0762` m vs `0.0401/0.0399` m. All `10` review sheets were
+      opened; iter600 avoids the old total collapse pattern but shows
+      sample-level target/robot relative-pose drift, peg/contact
+      discontinuities, and unsafe final geometry. Do not use iter600 for
+      closed-loop DP/controller work.
+- [ ] Watch only for a naturally produced later checkpoint from the existing
+      training allocation. Do not start a new controller path until a
+      checkpoint passes generated video, action metrics, readout metrics, and
+      visual review together.
 - [x] Current 2026-06-12 19:38 CST monitor: the fix1-recipe full run is live
       and healthy through rank-0 iteration 45. Iter0 validation loss was
       `3.606580`; rank-0 iteration 45 train loss is `0.9703` with

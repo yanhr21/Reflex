@@ -77,10 +77,23 @@
       old white-fog/geometry-collapse failure. It is still not controller-ready
       because target-onset diagnostics fire early/false on low thresholds and
       several final peg/hole relative poses remain imprecise.
-- [ ] Continue the same SFT toward iter600/900 while eval gates run. An
-      `iter_000000600` strict eval watcher is active in tmux
-      `cosmos3_v7_733_full_iter600_eval_watch_127120` on the held auxiliary
-      Slurm allocation `127120`.
+- [x] Continue the same SFT to iter600 and run the full gate. Checkpoint
+      `iter_000000600` saved at `2026-06-12 22:21 CST`, validation loss was
+      `0.131243`, and the strict generated-eval/readout/profile chain
+      completed in held auxiliary allocation `127120`. The run remains
+      structurally valid but is not better than iter300 for the actual world
+      model objective: mean future PSNR dropped to `20.2910`, robot-action
+      future RMSE rose to `0.9831`, state-sidecar future RMSE rose to
+      `0.6805`, and generated-RGB final hole error rose to `0.1058` m.
+      Direct review of all `10` sheets found visible relative-pose drift and
+      peg/contact inconsistencies in several samples. Treat iter600 as
+      negative for controller handoff.
+- [ ] Let the live SFT continue only within the already held allocation. Do
+      not request controller/DP integration, and do not pick checkpoints by
+      validation loss alone. If the allocation reaches a later checkpoint,
+      evaluate it with the same strict same-length action/readout/visual gate;
+      otherwise keep iter300 as the best current qualitative sanity checkpoint
+      while recording that it is still not controller-ready.
 - [x] Historical entry superseded: the rejected follow-up run was:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
       It uses the frozen user-override `733`-row v7 DP source and the existing

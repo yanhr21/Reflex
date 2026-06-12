@@ -199,9 +199,43 @@ Fix1-recipe iter300 eval/readout/profile:
   still false-fire on static samples or fire early at low thresholds on moving
   samples. This checkpoint is therefore a positive training/eval sanity result,
   but not controller-ready world-model evidence.
-- An `iter_000000600` strict eval watcher is active in tmux
-  `cosmos3_v7_733_full_iter600_eval_watch_127120` on held auxiliary allocation
-  `127120`; controller/DP integration remains gated off.
+- The `iter_000000600` strict eval/readout/profile watcher completed in held
+  auxiliary allocation `127120`; the result is recorded in the next section.
+  Controller/DP integration remains gated off.
+
+Fix1-recipe iter600 eval/readout/profile:
+
+- Checkpoint `iter_000000600` saved at `2026-06-12 22:21 CST`; validation loss
+  was `0.131243`. Training then resumed normally with finite losses.
+- Strict generated-eval root:
+  `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000600`.
+- Strict eval passed structurally for `10` samples:
+  `strict_eval_artifacts_ok=true`, `strict_failures=[]`,
+  generated/reference video frames `301/301`, and action tensor shape
+  `300x32`.
+- Aggregate generated-eval metrics are worse than iter300 despite the lower
+  validation loss: mean future video PSNR `20.2910293787`, mean action RMSE
+  `0.6189765621`, mean robot-action prefix RMSE `0.0017889231`, mean
+  state-sidecar prefix RMSE `0.0015759602`, mean robot-action future RMSE
+  `0.9830810889`, and mean state-sidecar future RMSE `0.6805342149`.
+- Generated-RGB readout/profile passed strict structure over `10/10` samples,
+  but also degraded relative to iter300: mean final hole error
+  `0.1057760996` m, mean future hole RMSE `0.0603418101` m, mean future peg
+  RMSE `0.0795095738` m, mean future TCP RMSE `0.0761800148` m, and mean
+  future peg-head-hole RMSE `0.0457403359` m.
+- The agent opened all `10` iter600 ref/pred sheets. There is no old global
+  white-fog or full-scene geometry-collapse failure, but the checkpoint is not
+  controller-ready. Several sheets show target/robot relative-pose drift after
+  the prefix, peg/contact discontinuity, or target-final-position errors.
+  Examples: static samples `01` and `02` drift in block/robot relative pose;
+  moving target sample `04` loses the final peg/block alignment; moving
+  insert-resume sample `07` leaves unsafe peg/contact geometry. This visual
+  evidence agrees with the higher action/state/readout errors.
+- Conclusion: do not select checkpoints by validation loss alone. Iter300 is
+  the better qualitative sanity checkpoint so far, but it is also not yet
+  controller-ready. Controller/DP integration remains gated until a checkpoint
+  passes generated video, action metrics, readout metrics, and direct visual
+  review together.
 
 Post-SFT code-path audit:
 
