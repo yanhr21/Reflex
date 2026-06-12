@@ -29,9 +29,18 @@
       readout/profile, and an explicit visual-review verdict. It blocks by
       default unless all three gates pass and should be called by any future
       live closed-loop wrapper before it touches DP or the simulator.
-- [ ] The future closed-loop wrapper must run only inside a Slurm compute-node
-      allocation. It must refuse login-node execution, like the current
-      Cosmos eval/readout watchers.
+- [x] Add a compute-node-only guarded closed-loop preflight wrapper:
+      `scripts/slurm/run_cosmos3_receding_closed_loop_in_allocation.sh`
+      and Python entry point
+      `scripts/world_model/run_cosmos3_receding_closed_loop.py`. They refuse
+      login-node execution, record checkpoint/condition/DP/gate manifests, and
+      stop before simulator work when the gate fails.
+- [x] Smoke the guarded preflight inside held compute allocation `127120` as a
+      single Slurm task (`step 127120.7`) on latest fix1-recipe iter300. The
+      DP manifest contract and full-episode condition/normalization contract
+      passed; the closed-loop gate returned `closed_loop_allowed=false` because
+      explicit visual review is `fail`. The wrapper exited with expected code
+      `40` and did not start live environment rollout.
 - [ ] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
@@ -71,9 +80,9 @@
       `scripts/slurm/run_cosmos3_receding_closed_loop_in_allocation.sh`, that
       records job id, checkpoint path, condition root, DP checkpoint, action
       normalization stats, validation seeds/scenarios, and evidence boundary.
-      Current active-script audit found no existing active receding wrapper;
-      this must be implemented or deliberately restored only after an SFT
-      checkpoint passes the generated artifact/readout/visual gate.
+      Current implementation is a guarded preflight only. It does not run
+      live controller smoke until a future SFT checkpoint passes the generated
+      artifact/readout/visual gate.
 - [ ] Add a Python entry point, e.g.
       `scripts/world_model/run_cosmos3_receding_closed_loop.py`, with an
       initial one-env smoke mode:
@@ -81,12 +90,16 @@
       call the Cosmos full-episode policy inference for a causal prefix,
       de-normalize and execute at most `8` robot actions, reobserve, and
       repeat until termination or `300` steps.
+      Current implementation performs compute-node/gate/contract preflight
+      and refuses weak checkpoints; the live `env.step` smoke remains pending.
 - [ ] Save for every rollout: live RGB video, per-step executed robot action,
       generated action/state sidecars, real simulator metrics, target/peg/TCP
       readout trajectory, final success predicates, and a review sheet.
 - [ ] Run a tiny compute-node smoke first. It passes only if length accounting,
       action de-normalization, live `env.step`, video recording, and final
       metrics all complete without using sidecar/oracle state.
+      Current compute-node smoke covered the preflight and gate path only; live
+      `env.step` remains blocked by the failed checkpoint gate.
 - [ ] Only after the smoke passes, run the fixed scenario-diverse validation
       panel from the testing plan: static/none, pre-motion target forecast,
       observed target motion, move-stop, reverse, peg disturbance, and

@@ -26,6 +26,15 @@ Current authoritative state after the latest fix1-recipe restart:
   with the agent visual verdict set to `fail` returned
   `closed_loop_allowed=false` for both; the blocking reason is
   `explicit_visual_review_not_passed`.
+- A guarded closed-loop preflight entry point was added at
+  `scripts/world_model/run_cosmos3_receding_closed_loop.py`, with allocation
+  wrapper `scripts/slurm/run_cosmos3_receding_closed_loop_in_allocation.sh`.
+  Both refuse login-node execution; the wrapper also refuses multi-task srun
+  execution so a future live controller cannot duplicate control processes.
+  A single-task compute-node smoke on Slurm step `127120.7` checked the latest
+  fix1-recipe iter300 root. DP manifest contract and condition/normalization
+  contract passed, but the gate blocked with `closed_loop_allowed=false` and
+  the expected wrapper exit code `40`. No live `env.step` rollout was started.
 
 Latest user instruction stopped data construction immediately and directed the
 agent to proceed to Cosmos3 SFT. The old gate requiring exactly 1000 rows and
