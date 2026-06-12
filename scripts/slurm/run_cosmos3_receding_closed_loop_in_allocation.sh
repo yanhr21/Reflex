@@ -36,6 +36,7 @@ VISUAL_REVIEW_NOTE="${VISUAL_REVIEW_NOTE:-}"
 MODE="${MODE:-preflight}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-300}"
 ACTION_EXEC_HORIZON="${ACTION_EXEC_HORIZON:-8}"
+ACTION_PREVIEW_SAMPLE_INDEX="${ACTION_PREVIEW_SAMPLE_INDEX:-0}"
 EXPECTED_VIDEO_FRAMES="${EXPECTED_VIDEO_FRAMES:-301}"
 EXPECTED_ACTION_STEPS="${EXPECTED_ACTION_STEPS:-300}"
 EXPECTED_ACTION_DIM="${EXPECTED_ACTION_DIM:-32}"
@@ -58,6 +59,7 @@ main() {
     echo "output_root=${OUTPUT_ROOT}"
     echo "visual_review_status=${VISUAL_REVIEW_STATUS}"
     echo "mode=${MODE}"
+    echo "action_preview_sample_index=${ACTION_PREVIEW_SAMPLE_INDEX}"
     echo "evidence_boundary=Preflight/gate only; not controller success evidence."
   } | tee "${OUTPUT_ROOT}/closed_loop_wrapper_manifest.txt"
 
@@ -77,6 +79,7 @@ main() {
     --robot-action-dim "${ROBOT_ACTION_DIM}" \
     --max-episode-steps "${MAX_EPISODE_STEPS}" \
     --action-exec-horizon "${ACTION_EXEC_HORIZON}" \
+    --action-preview-sample-index "${ACTION_PREVIEW_SAMPLE_INDEX}" \
     --mode "${MODE}" \
     2>&1 | tee "${OUTPUT_ROOT}/closed_loop_preflight.log"
 }

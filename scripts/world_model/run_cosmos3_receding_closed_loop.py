@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -39,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot-action-dim", type=int, default=7)
     parser.add_argument("--max-episode-steps", type=int, default=300)
     parser.add_argument("--action-exec-horizon", type=int, default=8)
+    parser.add_argument("--action-preview-sample-index", type=int, default=0)
     parser.add_argument("--mode", choices=("preflight", "smoke"), default="preflight")
     return parser.parse_args()
 
@@ -151,6 +153,110 @@ def run_gate(args: argparse.Namespace, output_root: Path) -> dict[str, Any]:
     return read_json(gate_json)
 
 
+def _to_float_matrix(value: Any) -> list[list[float]]:
+    if not isinstance(value, list) or not value:
+        raise ValueError("predicted action is not a non-empty list")
+    matrix: list[list[float]] = []
+    for row in value:
+        if not isinstance(row, list):
+            raise ValueError("predicted action row is not a list")
+        matrix.append([float(x) for x in row])
+    return matrix
+
+
+def _column_stats(matrix: list[list[float]]) -> dict[str, Any]:
+    flat = [x for row in matrix for x in row]
+    finite = all(math.isfinite(x) for x in flat)
+    if not flat:
+        return {"finite": finite, "num_values": 0}
+    return {
+        "finite": finite,
+        "num_values": len(flat),
+        "min": min(flat),
+        "max": max(flat),
+        "mean_abs": sum(abs(x) for x in flat) / float(len(flat)),
+        "max_abs": max(abs(x) for x in flat),
+    }
+
+
+def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argparse.Namespace, output_root: Path) -> dict[str, Any]:
+    inspection = read_json(eval_root / "eval_artifact_inspection.json")
+    samples = inspection.get("samples") or []
+    if not samples:
+        raise ValueError("eval artifact inspection has no samples")
+    sample_index = max(0, min(args.action_preview_sample_index, len(samples) - 1))
+    sample = samples[sample_index]
+    sample_name = sample["name"]
+    sample_outputs = read_json(eval_root / "inference" / sample_name / "sample_outputs.json")
+    outputs = sample_outputs.get("outputs") or []
+    content = (outputs[0].get("content") if outputs else None) or {}
+    action = _to_float_matrix(content.get("action"))
+    stats = read_json(condition_root / "normalization_stats.json")
+    mean = [float(x) for x in stats["mean"]]
+    std = [float(x) for x in stats["std"]]
+    vector_names = list(stats.get("vector_names") or [])
+
+    shape_ok = (
+        len(action) == args.expected_action_steps
+        and all(len(row) == args.expected_action_dim for row in action)
+    )
+    future_start = int(
+        sample.get("action_metrics", {}).get(
+            "future_start_action_index",
+            sample.get("action_metrics", {}).get("prefix_end_action_index_exclusive", sample.get("prefix_frame_index", 0)),
+        )
+    )
+    future_start = max(0, min(future_start, args.expected_action_steps))
+    chunk_end = min(args.expected_action_steps, future_start + args.action_exec_horizon)
+
+    normalized_chunk = [
+        row[: args.robot_action_dim]
+        for row in action[future_start:chunk_end]
+    ]
+    denormalized_chunk = []
+    for row in normalized_chunk:
+        denormalized_chunk.append(
+            [
+                row[i] * std[i] + mean[i]
+                for i in range(args.robot_action_dim)
+            ]
+        )
+
+    preview = {
+        "sample_index": sample_index,
+        "sample_name": sample_name,
+        "prefix_role": sample.get("prefix_role"),
+        "scenario": sample.get("scenario"),
+        "prefix_frame_index": sample.get("prefix_frame_index"),
+        "future_start_action_index": future_start,
+        "action_exec_horizon": args.action_exec_horizon,
+        "chunk_start": future_start,
+        "chunk_end_exclusive": chunk_end,
+        "chunk_steps": chunk_end - future_start,
+        "expected_action_shape": [args.expected_action_steps, args.expected_action_dim],
+        "predicted_action_shape": [len(action), len(action[0]) if action else 0],
+        "shape_ok": shape_ok,
+        "robot_action_dim": args.robot_action_dim,
+        "robot_action_vector_names": vector_names[: args.robot_action_dim],
+        "normalized_robot_action_stats": _column_stats(normalized_chunk),
+        "denormalized_robot_action_stats": _column_stats(denormalized_chunk),
+        "denormalized_robot_action_chunk": denormalized_chunk,
+        "boundary": (
+            "Action chunk preview only. These actions are not executed and are "
+            "not controller evidence; live execution remains gated by visual "
+            "review and simulator rollout."
+        ),
+    }
+    preview["ok"] = bool(
+        shape_ok
+        and preview["chunk_steps"] > 0
+        and preview["normalized_robot_action_stats"].get("finite")
+        and preview["denormalized_robot_action_stats"].get("finite")
+    )
+    write_manifest(output_root / "candidate_action_chunk_preview.json", preview)
+    return preview
+
+
 def write_manifest(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -176,6 +282,7 @@ def main() -> int:
 
     dp_contract = check_dp_manifest(dp_manifest, args)
     condition_contract = check_condition_root(condition_root, args)
+    action_chunk_preview = build_action_chunk_preview(eval_root, condition_root, args, output_root)
     gate = run_gate(args, output_root)
 
     manifest: dict[str, Any] = {
@@ -194,12 +301,14 @@ def main() -> int:
         "output_root": str(output_root),
         "max_episode_steps": args.max_episode_steps,
         "action_exec_horizon": args.action_exec_horizon,
+        "action_preview_sample_index": args.action_preview_sample_index,
         "expected_video_frames": args.expected_video_frames,
         "expected_action_steps": args.expected_action_steps,
         "expected_action_dim": args.expected_action_dim,
         "robot_action_dim": args.robot_action_dim,
         "dp_contract": dp_contract,
         "condition_contract": condition_contract,
+        "action_chunk_preview": action_chunk_preview,
         "gate": gate,
         "boundary": (
             "Preflight only unless the gate passes. Live simulator success must "
@@ -214,6 +323,8 @@ def main() -> int:
         failures.append("dp_contract_failed")
     if not condition_contract["ok"]:
         failures.append("condition_contract_failed")
+    if not action_chunk_preview["ok"]:
+        failures.append("action_chunk_preview_failed")
     if not gate.get("closed_loop_allowed"):
         failures.append("closed_loop_gate_blocked")
 

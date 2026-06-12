@@ -41,6 +41,16 @@
       passed; the closed-loop gate returned `closed_loop_allowed=false` because
       explicit visual review is `fail`. The wrapper exited with expected code
       `40` and did not start live environment rollout.
+- [x] Extend the guarded preflight to build an offline candidate robot-action
+      chunk preview from Cosmos eval output before the gate decision. Compute
+      smoke step `127120.8` on latest fix1-recipe iter300 loaded a `300x32`
+      predicted action tensor, used `future_start_action_index=131`, selected
+      an `8`-step chunk `[131,139)`, de-normalized only columns `0..6` with
+      `normalization_stats.json`, and wrote
+      `candidate_action_chunk_preview.json`. The preview contract passed
+      (`finite=true`, `chunk_steps=8`, shape `[300,32]`), then the wrapper
+      still stopped with expected exit code `40` because the visual gate
+      remains failed. No live environment rollout was started.
 - [ ] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
@@ -66,6 +76,10 @@
       and de-normalize only columns `0..6` with the matching vector-name
       stats. Clip/validate against the ManiSkill action space before
       `env.step`.
+      Current preflight implements the de-normalization preview and verifies
+      finite `<=8` robot-action chunks, but action-space clipping/validation
+      against the live ManiSkill env remains pending until the gate permits
+      live simulator construction.
 - [ ] Treat columns `7..31` as predicted task-state diagnostics and controller
       scoring/readout context only. They must not be written into simulator
       state, used as oracle object poses, or used to bypass RGB/state

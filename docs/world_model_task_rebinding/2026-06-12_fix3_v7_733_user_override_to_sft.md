@@ -35,6 +35,16 @@ Current authoritative state after the latest fix1-recipe restart:
   fix1-recipe iter300 root. DP manifest contract and condition/normalization
   contract passed, but the gate blocked with `closed_loop_allowed=false` and
   the expected wrapper exit code `40`. No live `env.step` rollout was started.
+- The guarded preflight now also performs an offline action-chunk preview before
+  any live-control decision. On Slurm step `127120.8`, latest fix1-recipe
+  iter300 sample `00_peg_recovery...` loaded a `300x32` predicted action
+  sequence, used `future_start_action_index=131`, selected the next `8` robot
+  actions, and de-normalized only columns `0..6` with the WAM normalization
+  stats. The preview contract passed with finite values and wrote
+  `candidate_action_chunk_preview.json`, then the visual gate still blocked
+  closed-loop execution. This proves the current artifacts can be converted
+  into a candidate short robot-action chunk, not that the chunk is physically
+  executable or controller-success evidence.
 
 Latest user instruction stopped data construction immediately and directed the
 agent to proceed to Cosmos3 SFT. The old gate requiring exactly 1000 rows and
