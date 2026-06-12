@@ -47,6 +47,13 @@
       checkpoint-file poller and will request a fresh 1-H200 allocation only
       after `iter_000001800` is saved. This avoids idle GPU allocation while
       preserving the strict eval/readout/visual-gate sequence.
+- [ ] `iter_000001800` has been saved and is structurally present under the
+      checkpoint root, but `latest_checkpoint.txt` still reports
+      `iter_000001500`. The replacement watcher was corrected to trigger from
+      the stable target checkpoint directory and `model/.metadata`; Slurm job
+      `127350` is pending for the 1-H200 eval allocation. Do not treat iter1800
+      as reviewed until that eval/readout/profile and manual visual sheet review
+      finish.
       No controller or DP integration may start until a future gate passes
       strict artifacts, generated-RGB readout/profile, and explicit visual
       review evidence.

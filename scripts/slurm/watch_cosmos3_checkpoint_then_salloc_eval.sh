@@ -12,6 +12,7 @@ MASTER_PORT="${MASTER_PORT:-50851}"
 WAIT_INTERVAL_SECONDS="${WAIT_INTERVAL_SECONDS:-60}"
 STABLE_SECONDS="${STABLE_SECONDS:-90}"
 VISUAL_REVIEW_NOTE="${VISUAL_REVIEW_NOTE:-pending_agent_visual_review}"
+REQUIRE_LATEST_MATCH="${REQUIRE_LATEST_MATCH:-false}"
 
 ALLOC_PARTITION="${ALLOC_PARTITION:-gpu}"
 ALLOC_GRES="${ALLOC_GRES:-gpu:${NPROC_PER_NODE}}"
@@ -38,13 +39,20 @@ echo "checkpoint_root=${CHECKPOINT_ROOT}"
 echo "checkpoint_name=${CHECKPOINT_NAME}"
 echo "eval_root=${EVAL_ROOT}"
 echo "boundary=login_node_only_polls_checkpoint_and_requests_salloc_no_gpu_or_cpu_heavy_work"
+echo "require_latest_match=${REQUIRE_LATEST_MATCH}"
 
 while true; do
   latest="$(latest_checkpoint)"
   has_dir=no
+  has_model_metadata=no
   [[ -d "${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}" ]] && has_dir=yes
-  echo "poll $(date -Is) latest=${latest:-none} has_target_dir=${has_dir}"
-  if [[ "${latest}" == "${CHECKPOINT_NAME}" && "${has_dir}" == "yes" ]]; then
+  [[ -s "${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}/model/.metadata" ]] && has_model_metadata=yes
+  echo "poll $(date -Is) latest=${latest:-none} has_target_dir=${has_dir} has_model_metadata=${has_model_metadata}"
+  if [[ "${has_dir}" == "yes" && "${has_model_metadata}" == "yes" ]]; then
+    if [[ "${REQUIRE_LATEST_MATCH}" == "true" && "${latest}" != "${CHECKPOINT_NAME}" ]]; then
+      sleep "${WAIT_INTERVAL_SECONDS}"
+      continue
+    fi
     break
   fi
   sleep "${WAIT_INTERVAL_SECONDS}"
@@ -53,13 +61,20 @@ done
 echo "stable_wait_seconds=${STABLE_SECONDS}"
 sleep "${STABLE_SECONDS}"
 latest_after_wait="$(latest_checkpoint)"
-if [[ "${latest_after_wait}" != "${CHECKPOINT_NAME}" ]]; then
-  echo "refusing_eval_latest_changed=${latest_after_wait:-none}"
+if [[ "${REQUIRE_LATEST_MATCH}" == "true" && "${latest_after_wait}" != "${CHECKPOINT_NAME}" ]]; then
+  echo "refusing_eval_latest_mismatch=${latest_after_wait:-none}"
   exit 41
 fi
 if [[ ! -d "${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}" ]]; then
   echo "refusing_eval_target_dir_missing=${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}"
   exit 42
+fi
+if [[ ! -s "${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}/model/.metadata" ]]; then
+  echo "refusing_eval_model_metadata_missing=${CHECKPOINT_ROOT}/${CHECKPOINT_NAME}/model/.metadata"
+  exit 43
+fi
+if [[ "${latest_after_wait}" != "${CHECKPOINT_NAME}" ]]; then
+  echo "latest_checkpoint_mismatch_allowed=${latest_after_wait:-none}"
 fi
 
 export ROOT SFT_ROOT CONDITION_ROOT READOUT_CHECKPOINT CHECKPOINT_ITER

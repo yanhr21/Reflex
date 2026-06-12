@@ -105,6 +105,13 @@
       `salloc` eval allocation after `iter_000001800` exists and is stable.
       This login watcher performs no rollout/render/training work before the
       compute allocation starts.
+- [x] Main SFT saved `iter_000001800` at `2026-06-13T07:28:00+08:00`, but
+      `latest_checkpoint.txt` still read `iter_000001500`. The eval request
+      watcher was repaired to use the stable target checkpoint directory plus
+      `model/.metadata` as the trigger and to record latest mismatch instead
+      of blocking. Tmux
+      `cosmos3_v7_733_iter1800_eval_request_on_ckpt_v2_0613` requested
+      1-H200 Slurm job `127350` for the strict iter1800 eval/readout/gate.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

@@ -378,6 +378,17 @@ readout, readout profile, and pre-visual closed-loop gate inside the compute
 allocation. The first poll at `2026-06-13T06:58:54+08:00` reported
 `latest=iter_000001500` and `has_target_dir=no`.
 
+Main SFT saved `iter_000001800` at `2026-06-13T07:28:00+08:00`. The target
+checkpoint directory and `model/.metadata` existed, but `latest_checkpoint.txt`
+still reported `iter_000001500`. Because the eval wrapper takes an explicit
+`CHECKPOINT_PATH`, the request watcher was repaired to trigger from a stable
+target checkpoint directory and record a latest mismatch instead of blocking on
+the stale latest file. Tmux
+`cosmos3_v7_733_iter1800_eval_request_on_ckpt_v2_0613` immediately detected
+the stable target checkpoint, logged
+`latest_checkpoint_mismatch_allowed=iter_000001500`, and requested Slurm job
+`127350` for a 1-H200 iter1800 strict eval/readout/gate allocation.
+
 ## Closed-Loop Smoke Preparation
 
 The guarded closed-loop entry point was extended while the SFT continued
