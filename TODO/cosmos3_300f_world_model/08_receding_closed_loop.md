@@ -51,11 +51,27 @@
       (`finite=true`, `chunk_steps=8`, shape `[300,32]`), then the wrapper
       still stopped with expected exit code `40` because the visual gate
       remains failed. No live environment rollout was started.
+- [x] Extend the guarded preflight to validate the frozen DP checkpoint
+      structure without constructing ManiSkill envs. Compute smoke step
+      `127120.10` loaded
+      `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`
+      with `weights_only=True`, verified checkpoint keys
+      `agent/ema_agent/args/iteration`, confirmed `ema_agent` is nonempty,
+      and checked the saved args against the DP manifest
+      (`PegInsertionSide-v1`, `pd_ee_delta_pose`, `obs_horizon=2`,
+      `act_horizon=8`, `pred_horizon=16`, `max_episode_steps=300`). DP
+      checkpoint, DP manifest, condition contract, and action preview all
+      passed; the wrapper still exited with expected code `40` solely because
+      the Cosmos visual gate remains failed. No live `env.step` rollout was
+      started.
 - [ ] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
       Its manifest fixes `PegInsertionSide-v1`, `pd_ee_delta_pose`,
-      `obs_horizon=2`, `act_horizon=8`, and `max_episode_steps=300`.
+      `obs_horizon=2`, `act_horizon=8`, and `max_episode_steps=300`. Current
+      code validates the saved checkpoint format and selected `ema_agent`
+      state key; actual DP policy construction and env interaction remain
+      blocked until a future Cosmos checkpoint passes the closed-loop gate.
 - [ ] Observe live RGB/state, build a causal Cosmos prefix from the latest
       observed frames/state, predict the remaining or short future horizon,
       execute only a short action prefix, then reobserve and refresh. The

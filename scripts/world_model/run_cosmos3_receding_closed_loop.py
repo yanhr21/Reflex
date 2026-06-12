@@ -26,6 +26,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-root", required=True)
     parser.add_argument("--dp-checkpoint", required=True)
     parser.add_argument("--dp-manifest", required=True)
+    parser.add_argument(
+        "--dp-state-key",
+        choices=("ema_agent", "agent"),
+        default="ema_agent",
+        help="State-dict key to require for the frozen static DP policy.",
+    )
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--readout-subdir", default="task_state_readout_v7_733")
     parser.add_argument(
@@ -101,6 +107,96 @@ def check_dp_manifest(dp_manifest: Path, args: argparse.Namespace) -> dict[str, 
         "expected": expected,
         "mismatches": mismatches,
         "ok": not mismatches,
+    }
+
+
+def check_dp_checkpoint(dp_checkpoint: Path, dp_manifest: Path, args: argparse.Namespace) -> dict[str, Any]:
+    """Validate the frozen DP artifact without constructing the simulator.
+
+    This keeps the closed-loop entrypoint tied to the real ManiSkill state-DP
+    checkpoint format used by scripts/training/eval_dp_state.py, while avoiding
+    any env construction before the Cosmos visual/readout gate passes.
+    """
+    import torch
+
+    manifest = read_json(dp_manifest)
+    manifest_args = manifest.get("args") or {}
+    try:
+        ckpt = torch.load(dp_checkpoint, map_location="cpu", weights_only=True)
+    except TypeError:
+        ckpt = torch.load(dp_checkpoint, map_location="cpu")
+    if not isinstance(ckpt, dict):
+        return {
+            "path": str(dp_checkpoint),
+            "ok": False,
+            "error": f"checkpoint_load_returned_{type(ckpt).__name__}",
+        }
+
+    required_keys = ["args", "agent", args.dp_state_key, "iteration"]
+    missing_keys = [key for key in required_keys if key not in ckpt]
+    ckpt_args = ckpt.get("args") if isinstance(ckpt.get("args"), dict) else {}
+    expected_args = {
+        "env_id": "PegInsertionSide-v1",
+        "control_mode": "pd_ee_delta_pose",
+        "obs_horizon": 2,
+        "act_horizon": 8,
+        "max_episode_steps": args.max_episode_steps,
+        "pred_horizon": 16,
+    }
+    arg_mismatches = {
+        key: {"expected": value, "actual": ckpt_args.get(key)}
+        for key, value in expected_args.items()
+        if ckpt_args.get(key) != value
+    }
+    manifest_arg_mismatches = {
+        key: {
+            "manifest": manifest_args.get(key),
+            "checkpoint": ckpt_args.get(key),
+        }
+        for key in expected_args
+        if manifest_args.get(key) != ckpt_args.get(key)
+    }
+    state_value = ckpt.get(args.dp_state_key)
+    state_nonempty = isinstance(state_value, dict) and bool(state_value)
+    sample_tensors: list[dict[str, Any]] = []
+    if isinstance(state_value, dict):
+        for name, value in state_value.items():
+            if hasattr(value, "shape"):
+                sample_tensors.append(
+                    {
+                        "name": str(name),
+                        "shape": list(value.shape),
+                        "dtype": str(value.dtype),
+                    }
+                )
+            if len(sample_tensors) >= 3:
+                break
+
+    return {
+        "path": str(dp_checkpoint),
+        "state_key": args.dp_state_key,
+        "required_keys": required_keys,
+        "present_keys": sorted(str(key) for key in ckpt.keys()),
+        "missing_keys": missing_keys,
+        "iteration": ckpt.get("iteration"),
+        "world_size": ckpt.get("world_size"),
+        "global_batch_size": ckpt.get("global_batch_size"),
+        "per_gpu_batch_size": ckpt.get("per_gpu_batch_size"),
+        "expected_args": expected_args,
+        "arg_mismatches": arg_mismatches,
+        "manifest_arg_mismatches": manifest_arg_mismatches,
+        "state_nonempty": state_nonempty,
+        "sample_tensors": sample_tensors,
+        "ok": (
+            not missing_keys
+            and not arg_mismatches
+            and not manifest_arg_mismatches
+            and state_nonempty
+        ),
+        "boundary": (
+            "Checkpoint structure check only. It does not construct ManiSkill "
+            "envs, run DP inference, or prove controller success."
+        ),
     }
 
 
@@ -281,6 +377,7 @@ def main() -> int:
     assert_file(dp_manifest, "DP manifest")
 
     dp_contract = check_dp_manifest(dp_manifest, args)
+    dp_checkpoint_contract = check_dp_checkpoint(dp_checkpoint, dp_manifest, args)
     condition_contract = check_condition_root(condition_root, args)
     action_chunk_preview = build_action_chunk_preview(eval_root, condition_root, args, output_root)
     gate = run_gate(args, output_root)
@@ -298,6 +395,7 @@ def main() -> int:
         "condition_root": str(condition_root),
         "dp_checkpoint": str(dp_checkpoint),
         "dp_manifest": str(dp_manifest),
+        "dp_state_key": args.dp_state_key,
         "output_root": str(output_root),
         "max_episode_steps": args.max_episode_steps,
         "action_exec_horizon": args.action_exec_horizon,
@@ -307,6 +405,7 @@ def main() -> int:
         "expected_action_dim": args.expected_action_dim,
         "robot_action_dim": args.robot_action_dim,
         "dp_contract": dp_contract,
+        "dp_checkpoint_contract": dp_checkpoint_contract,
         "condition_contract": condition_contract,
         "action_chunk_preview": action_chunk_preview,
         "gate": gate,
@@ -321,6 +420,8 @@ def main() -> int:
     failures: list[str] = []
     if not dp_contract["ok"]:
         failures.append("dp_contract_failed")
+    if not dp_checkpoint_contract["ok"]:
+        failures.append("dp_checkpoint_contract_failed")
     if not condition_contract["ok"]:
         failures.append("condition_contract_failed")
     if not action_chunk_preview["ok"]:

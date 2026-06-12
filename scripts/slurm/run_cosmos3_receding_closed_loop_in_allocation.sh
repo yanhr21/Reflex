@@ -29,6 +29,7 @@ EVAL_ROOT="${EVAL_ROOT:-${SFT_ROOT}/eval_full_episode_wam_${CHECKPOINT_NAME}}"
 CONDITION_ROOT="${CONDITION_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/full_episode_wam_conditions_fix3_v7_733_rgb_300step_20260612_0245}"
 DP_CHECKPOINT="${DP_CHECKPOINT:-${ROOT}/experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt}"
 DP_MANIFEST="${DP_MANIFEST:-${ROOT}/experiments/dp_peg1000/run_90201/manifest.json}"
+DP_STATE_KEY="${DP_STATE_KEY:-ema_agent}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${SFT_ROOT}/closed_loop_preflight_${CHECKPOINT_NAME}}"
 READOUT_SUBDIR="${READOUT_SUBDIR:-task_state_readout_v7_733}"
 VISUAL_REVIEW_STATUS="${VISUAL_REVIEW_STATUS:-missing}"
@@ -56,6 +57,7 @@ main() {
     echo "condition_root=${CONDITION_ROOT}"
     echo "dp_checkpoint=${DP_CHECKPOINT}"
     echo "dp_manifest=${DP_MANIFEST}"
+    echo "dp_state_key=${DP_STATE_KEY}"
     echo "output_root=${OUTPUT_ROOT}"
     echo "visual_review_status=${VISUAL_REVIEW_STATUS}"
     echo "mode=${MODE}"
@@ -69,6 +71,7 @@ main() {
     --condition-root "${CONDITION_ROOT}" \
     --dp-checkpoint "${DP_CHECKPOINT}" \
     --dp-manifest "${DP_MANIFEST}" \
+    --dp-state-key "${DP_STATE_KEY}" \
     --output-root "${OUTPUT_ROOT}" \
     --readout-subdir "${READOUT_SUBDIR}" \
     --visual-review-status "${VISUAL_REVIEW_STATUS}" \

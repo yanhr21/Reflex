@@ -45,6 +45,18 @@ Current authoritative state after the latest fix1-recipe restart:
   closed-loop execution. This proves the current artifacts can be converted
   into a candidate short robot-action chunk, not that the chunk is physically
   executable or controller-success evidence.
+- The guarded preflight now also validates the frozen DP checkpoint structure
+  before any future live-control path can use it. On Slurm step `127120.10`,
+  the wrapper loaded
+  `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`
+  on the compute node with `weights_only=True`, verified checkpoint keys
+  `agent/ema_agent/args/iteration`, confirmed the selected `ema_agent`
+  state-dict is nonempty, and checked the saved DP args against the manifest:
+  `PegInsertionSide-v1`, `pd_ee_delta_pose`, `obs_horizon=2`,
+  `act_horizon=8`, `pred_horizon=16`, and `max_episode_steps=300`. DP
+  manifest, DP checkpoint, WAM condition contract, and action preview passed.
+  Closed-loop execution still remained blocked solely because the explicit
+  visual review gate is `fail`; no live `env.step` rollout was started.
 
 Latest user instruction stopped data construction immediately and directed the
 agent to proceed to Cosmos3 SFT. The old gate requiring exactly 1000 rows and
