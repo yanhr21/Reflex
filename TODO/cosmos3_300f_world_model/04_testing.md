@@ -24,12 +24,20 @@
       geometry, while static `none` samples drift/false-fire target motion.
       `closed_loop_gate_visual_review.json` records
       `closed_loop_allowed=false`.
-- [x] A 2-H200 read-only extra panel is running for `iter_000001200` in
-      tmux `cosmos3_v7_733_iter1200_extra30_2gpu_0613`, Slurm step
-      `127286.4`, with output root
+- [x] The 2-H200 read-only extra panel for `iter_000001200` completed at
       `eval_full_episode_wam_iter_000001200_extra30_2gpu_20260613_0430`.
-      This uses the spare 2 GPUs without concurrent checkpoint writing and
-      does not relax the failed iter1200 closed-loop gate.
+      It used the spare allocation without concurrent checkpoint writing.
+      Strict eval/readout passed structurally for `30/30` samples, but direct
+      review of representative sheets still showed fast-shift/sine/static
+      relative-geometry errors. This confirms the failed iter1200 closed-loop
+      gate rather than relaxing it.
+- [x] A 2-H200 read-only watcher for `iter_000001500` extra-30 eval is now
+      running in tmux `cosmos3_v7_733_iter1500_extra30_2gpu_0613`, Slurm step
+      `127286.22`, with output root
+      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`. It waits
+      for the checkpoint, then runs strict eval, generated-RGB readout, and
+      readout failure profile from the same held allocation. It does not write
+      SFT checkpoints.
 - [x] Current source line is the fix3 v7 user-override `733`-row SFT source.
       The first SFT root
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245`

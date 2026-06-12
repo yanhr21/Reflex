@@ -61,12 +61,24 @@
       target-motion false firing. The gate file records
       `closed_loop_allowed=false` with reason
       `explicit_visual_review_not_passed`.
-- [x] The spare 2-H200 allocation `127286` is being used for a read-only
+- [x] The spare 2-H200 allocation `127286` completed a read-only
       `iter_000001200` extra-30 validation panel at
       `eval_full_episode_wam_iter_000001200_extra30_2gpu_20260613_0430`.
-      It fixes `CHECKPOINT_PATH` to `iter_000001200` and writes to a separate
-      eval root; it does not write checkpoints, touch `latest_checkpoint.txt`,
-      or replace the 4-H200 SFT writer.
+      It fixed `CHECKPOINT_PATH` to `iter_000001200` and wrote to a separate
+      eval root; it did not write checkpoints, touch `latest_checkpoint.txt`,
+      or replace the 4-H200 SFT writer. Strict artifacts and generated-RGB
+      readout passed structure for `30/30` samples, but the panel confirms the
+      iter1200 controller-negative diagnosis: mean final hole error is
+      `0.0885` m, mean future hole/peg/TCP RMSE is
+      `0.0504/0.0536/0.0512` m, and direct sheet review still shows unsafe
+      target/peg/hand relative-pose errors in fast-shift/sine/static cases.
+- [x] The same 2-H200 allocation `127286` is now reserved for a read-only
+      `iter_000001500` extra-30 watcher in tmux
+      `cosmos3_v7_733_iter1500_extra30_2gpu_0613`. It waits for the same
+      `iter_000001500` checkpoint as the main watcher, writes to
+      `eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`, and then
+      runs generated-RGB readout/profile. It remains a read-only eval path, not
+      a concurrent SFT checkpoint writer.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

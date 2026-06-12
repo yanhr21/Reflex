@@ -167,7 +167,7 @@ not run a concurrent SFT writer into the same root while the 4-H200 job
 - read-only validation/eval that fixes `CHECKPOINT_PATH` and writes to an
   independent eval root.
 
-The current read-only spare-GPU task is:
+The completed read-only spare-GPU task was:
 
 - tmux `cosmos3_v7_733_iter1200_extra30_2gpu_0613`
 - Slurm step `127286.4`
@@ -177,7 +177,41 @@ The current read-only spare-GPU task is:
 - `30` validation samples
 
 This task is diagnostic only and does not override the failed 10-sample
-iter1200 visual gate.
+iter1200 visual gate. It completed with strict structure intact:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- `30/30` generated-RGB readout samples strict-ok
+- mean future PSNR `21.6608184725` dB
+- mean action RMSE `0.4395335228`
+- mean robot-action future RMSE `0.7056837776`
+- mean state-sidecar future RMSE `0.4472291969`
+- generated-RGB mean final hole position error `0.0884815329` m
+- mean future hole/peg/TCP RMSE `0.0504114347` / `0.0535810572` /
+  `0.0511667308` m
+- mean future peg-head-hole RMSE `0.0318076271` m
+
+The agent opened representative review sheets from the 30-sample panel. The
+panel is not a controller pass. `hole_late_fast_shift` and `hole_late_sine`
+still show wrong future target/peg/hand relative geometry; `none` static
+samples still show drift in the target/hand relation; some `peg_drop` and
+`hole_late_constant` insert-resume sheets are visually cleaner, but they do
+not remove the failed handoff evidence.
+
+The same 2-H200 allocation is now waiting for an `iter_000001500` extra-30
+read-only chain:
+
+- tmux `cosmos3_v7_733_iter1500_extra30_2gpu_0613`
+- Slurm step `127286.22`
+- target checkpoint `iter_000001500`
+- output root
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001500_extra30_2gpu_20260613`
+- log
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_iter1500_extra30_2gpu_watch_chain_20260613.log`
+
+This watcher waits for the checkpoint, runs 30-sample strict full-episode eval,
+and then runs generated-RGB readout/profile. It is a read-only eval path and
+must not be confused with a second SFT writer.
 
 ## Closed-Loop Preflight Code
 
