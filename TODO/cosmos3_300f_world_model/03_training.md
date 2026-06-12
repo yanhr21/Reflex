@@ -47,7 +47,7 @@
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_overfit2_rgb_300step_fix1recipe_4gpu_20260612_1840/eval_full_episode_wam_iter_000000100/inference/00_peg_recovery_peg_drop_peg_drop_seed705095_idx0004.fix3_traj_0__peg_recovery_f131/vision.mp4`
       and
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_overfit2_rgb_300step_fix1recipe_4gpu_20260612_1840/eval_full_episode_wam_iter_000000100/inference/01_target_motion_observed_hole_late_move_stop_hole_late_move_stop_seed1080087_idx1760.fix3_traj_0__target_motion_observed_f117/vision.mp4`.
-- [ ] Start full-data v7_733 SFT again only with the enforced fix1 recipe and
+- [x] Start full-data v7_733 SFT again only with the enforced fix1 recipe and
       the frozen 733-row condition root. Do not reuse the rejected
       `normactive_clip1` recipe. After startup, monitor validation loss and
       launch strict generated-video/action/readout/visual gates at saved
@@ -64,13 +64,23 @@
       `independent_action_schedule=true`, and `shift_action=1`. Training
       reached `Starting training...`; iter0 validation loss is `3.606580`, and
       early rank-0 losses are finite (`3.0716` at iteration 7).
-- [x] Iter300 strict generated-eval watcher is active in tmux
+- [x] Iter300 strict generated-eval watcher completed in tmux
       `cosmos3_v7_733_full_eval_aux_request_0612` on fresh auxiliary Slurm job
-      `127120`, step `127120.0` (`server40`, `1xH200`), after old auxiliary job
-      `126985` was cancelled by Slurm. No `scancel` was used by the agent.
-- [ ] Inspect iter300 strict generated videos/action metrics/readout and visual
-      sheets before deciding whether to continue to iter600/900/1200/1500 or
-      debug the SFT/eval path.
+      `127120` (`server40`, `1xH200`), after old auxiliary job `126985` was
+      cancelled by Slurm. No `scancel` was used by the agent.
+- [x] Inspect iter300 strict generated videos/action metrics/readout and visual
+      sheets. Iter300 checkpoint is structurally valid and much better than
+      the rejected bad-recipe run: validation loss `0.155843`, future video
+      PSNR `21.6543`, action tensor shape `300x32`, robot-action future RMSE
+      `0.6354`, state-sidecar future RMSE `0.3534`, generated-RGB mean final
+      hole error `0.0655` m, and direct review of all `10` sheets found no
+      old white-fog/geometry-collapse failure. It is still not controller-ready
+      because target-onset diagnostics fire early/false on low thresholds and
+      several final peg/hole relative poses remain imprecise.
+- [ ] Continue the same SFT toward iter600/900 while eval gates run. An
+      `iter_000000600` strict eval watcher is active in tmux
+      `cosmos3_v7_733_full_iter600_eval_watch_127120` on the held auxiliary
+      Slurm allocation `127120`.
 - [x] Historical entry superseded: the rejected follow-up run was:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_normactive_clip1_4gpu_20260612_124500`.
       It uses the frozen user-override `733`-row v7 DP source and the existing

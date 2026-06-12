@@ -145,6 +145,64 @@ Current conclusion:
 - closed-loop/receding DP/controller evaluation must remain gated off for this
   checkpoint.
 
+Fix1-recipe restart after user-approved overfit:
+
+- The bad `normactive_clip1` follow-up was rejected after user visual review
+  matched the old "action adapter not really trained" failure. The concrete
+  config bug was that the run selected action tensors but did not carry the
+  overfit-validated fix1 recipe: it used `lr=2e-5`,
+  `action_loss_weight=10.0`, `independent_action_schedule=false`, and
+  `shift_action=None`.
+- The default full-episode WAM SFT wrapper now enforces the fix1 action recipe:
+  `lr=1e-4`, warmup `10`, `f_min=0.5`, `grad_clip_norm=1.0`,
+  `action_loss_weight=2.0`, `normalize_loss_by_active=true`,
+  `independent_action_schedule=true`, `shift_action=1`, and optimizer keys
+  including `action2llm`, `llm2action`, and `action_modality_embed`.
+- Two-sample overfit under this recipe passed user visual review at iter100.
+  The full v7_733 SFT was then restarted at
+  `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`,
+  tmux `cosmos3_sft_v7_733_full_fix1recipe_4gpu_126210`, Slurm step
+  `126210.41` on `server56`.
+- Launch/startup sanity passed: `fix1_action_recipe_check=passed`, `410`
+  trainable tensors selected, optimizer `lr=0.0001`,
+  `action_loss_weight=2.0`, `independent_action_schedule=true`, and
+  `shift_action=1`. Iter0 validation loss was `3.606580`.
+
+Fix1-recipe iter300 eval/readout/profile:
+
+- Checkpoint `iter_000000300` saved at `2026-06-12 20:51 CST`; validation loss
+  was `0.155843`. Training then resumed normally and stayed finite.
+- Strict generated-eval root:
+  `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000300`.
+- Strict eval passed structurally for `10` samples:
+  `strict_eval_artifacts_ok=true`, `strict_failures=[]`,
+  generated/reference video frames `301/301`, and action tensor shape
+  `300x32`.
+- Aggregate generated-eval metrics: mean future video PSNR `21.6543040597`,
+  mean action RMSE `0.3543249375`, mean robot-action prefix RMSE
+  `0.0017889231`, mean state-sidecar prefix RMSE `0.0015759602`,
+  mean robot-action future RMSE `0.6354126001`, and mean state-sidecar future
+  RMSE `0.3533818061`.
+- Generated-RGB readout/profile used the existing v7_733 reference readout
+  checkpoint
+  `sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245/task_state_readout_reference_rgb_301f_v7_733/best_model.pt`.
+  It passed strict structure over `10/10` samples.
+- Generated-RGB readout/profile metrics: mean final hole error
+  `0.0655233613` m, mean future hole RMSE `0.0391585658` m, mean future peg
+  RMSE `0.0400948399` m, mean future TCP RMSE `0.0399431949` m, and mean
+  future peg-head-hole RMSE `0.0318345695` m.
+- The agent opened all `10` ref/pred review sheets. Visual quality is much
+  better than the rejected bad-recipe run: no old white/fog-like robot
+  collapse, no obvious full-scene geometry blow-up, and moving-hole samples
+  show readable target motion with plausible robot/peg motion. However, several
+  final peg/hole relative poses remain imprecise, and target-onset diagnostics
+  still false-fire on static samples or fire early at low thresholds on moving
+  samples. This checkpoint is therefore a positive training/eval sanity result,
+  but not controller-ready world-model evidence.
+- An `iter_000000600` strict eval watcher is active in tmux
+  `cosmos3_v7_733_full_iter600_eval_watch_127120` on held auxiliary allocation
+  `127120`; controller/DP integration remains gated off.
+
 Post-SFT code-path audit:
 
 - The SFT/export path writes multiple full-episode rows per source trajectory,

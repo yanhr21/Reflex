@@ -24,20 +24,39 @@
       this gate produces acceptable target-motion/final-target/peg-contact
       evidence, and later method-gain claims must use an unfiltered/hard
       dynamic baseline where frozen DP success is measured separately.
-- [ ] Active iter300 gate for the current fix1-recipe full run: Slurm step
-      `126210.41` on `server56` is training, and auxiliary job `127120` on
-      `server40` is waiting for checkpoint `iter_000000300` to run strict eval
-      on 10 samples. After strict eval passes, run generated-RGB readout with
-      the existing v7_733 reference readout checkpoint
-      `sft_full_episode_wam_fix3_v7_733_rgb_300step_4gpu_20260612_0245/task_state_readout_reference_rgb_301f_v7_733/best_model.pt`,
-      then run the readout failure profile and open review sheets before
-      deciding whether to continue to iter600 or debug.
+- [x] Iter300 gate for the current fix1-recipe full run completed. Slurm step
+      `126210.41` on `server56` continues training, and auxiliary job `127120`
+      on `server40` ran strict eval, generated-RGB readout, failure profile,
+      and direct sheet review for `iter_000000300`.
+- [ ] Active iter600 gate for the current fix1-recipe full run: tmux
+      `cosmos3_v7_733_full_iter600_eval_watch_127120` is waiting in held
+      auxiliary allocation `127120` for checkpoint `iter_000000600`, then will
+      run strict 10-sample full-episode eval under the same `301` frame /
+      `300x32` action contract. After strict eval passes, run generated-RGB
+      readout/profile and inspect sheets before any controller/DP step.
 - [x] Current 2026-06-12 19:38 CST monitor: the fix1-recipe full run is live
       and healthy through rank-0 iteration 45. Iter0 validation loss was
       `3.606580`; rank-0 iteration 45 train loss is `0.9703` with
       `vision=0.0544`, `action=0.4580`, and no OOM/NaN/traceback marker in the
       inspected log. The iter300 watcher remains live on auxiliary job
       `127120` and is correctly waiting; no iter300 checkpoint exists yet.
+- [x] Current 2026-06-12 21:02 CST monitor: checkpoint `iter_000000300` was
+      saved and evaluated. Validation loss fell to `0.155843`. Strict eval
+      passed structurally for `10` samples with generated/reference videos
+      `301/301`, action tensors `300x32`, and `strict_failures=[]`. Aggregate
+      generated-eval metrics: mean future PSNR `21.6543040597`, mean action
+      RMSE `0.3543249375`, robot-action future RMSE `0.6354126001`, and
+      state-sidecar future RMSE `0.3533818061`; prefix RMSE stayed clean at
+      `0.0017889231` robot-action and `0.0015759602` state-sidecar.
+      Generated-RGB readout/profile also passed strict structure with mean
+      final hole error `0.0655233613` m, mean future hole/peg/TCP RMSE
+      `0.0391585658` / `0.0400948399` / `0.0399431949` m, and mean future
+      peg-head-hole RMSE `0.0318345695` m. Direct review opened all `10`
+      ref/pred sheets: geometry is stable and no old white-fog/robot-collapse
+      pattern appears, but several future final relative poses are still
+      imprecise and target-onset diagnostics false-fire or fire early at low
+      thresholds. Keep closed-loop/controller gated off and continue to
+      iter600.
 - [x] Post-SFT training/eval code-path audit found no obvious 128/93-frame
       truncation, fixed-eight-prefix misuse, or future-action leakage through
       the condition mask. Rows reference full `301`-frame videos and `300x32`

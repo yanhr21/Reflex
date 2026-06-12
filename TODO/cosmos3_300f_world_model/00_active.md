@@ -23,10 +23,10 @@
       samples with `301/301` videos, `[300,32]` actions, and no strict
       failures. Generated videos are under
       `eval_full_episode_wam_iter_000000100/inference/*/vision.mp4`.
-- [ ] Next active action: commit/push code and documentation only, then start
-      the full v7_733 SFT from the frozen 733-row condition root using the
-      enforced fix1 action recipe. Do not use the rejected `normactive_clip1`
-      recipe or any chunked/93-frame/128-frame path.
+- [x] Code and documentation were committed/pushed, and the full v7_733 SFT was
+      started from the frozen 733-row condition root using the enforced fix1
+      action recipe. Do not use the rejected `normactive_clip1` recipe or any
+      chunked/93-frame/128-frame path.
 - [x] Code/docs were committed and pushed to `yanhr21/Reflex` branch `main` as
       commit `1bd4691`. Large local artifacts are ignored by `.gitignore` and
       were not committed.
@@ -40,12 +40,22 @@
 - [x] Startup sanity: training reached `Starting training...`, iter0 validation
       loss was `3.606580`, and rank-0 iteration 7 loss was `3.0716` with
       finite vision/action losses.
-- [x] Iter300 strict eval watcher is active in fresh auxiliary allocation
-      `127120` on `server40`, step `127120.0`, waiting for
-      `iter_000000300` and configured for 10 generated validation samples.
-- [ ] Continue monitoring through the iter300 checkpoint/eval/readout gate.
-      Do not start controller/DP integration until generated videos, action
-      metrics, readout metrics, and visual review pass.
+- [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
+      `127120` on `server40`. Structural gates passed for `10` samples:
+      generated/reference videos are `301/301`, actions are `300x32`, and
+      `strict_failures=[]`. Iter300 validation loss is `0.155843`; generated
+      eval has mean future PSNR `21.6543`, robot-action future RMSE `0.6354`,
+      and state-sidecar future RMSE `0.3534`. Generated-RGB readout/profile
+      also passed structure but is not controller-ready: mean final hole error
+      `0.0655` m, future hole/peg/TCP RMSE `0.0392/0.0401/0.0399` m, and
+      future peg-head-hole RMSE `0.0318` m. Direct review of all `10` sheets
+      found no old geometry-collapse/white-fog failure, but several final
+      relative poses are still too imprecise for closed-loop handoff.
+- [ ] Continue monitoring to `iter_000000600`; strict eval watcher
+      `cosmos3_v7_733_full_iter600_eval_watch_127120` is active on held aux
+      allocation `127120`. Do not start controller/DP integration until
+      generated videos, action metrics, readout metrics, and visual review pass
+      at a checkpoint.
 - [x] Stop the rejected 128-action / 129-frame chunked SFT job and its waiting
       action-eval/readout watcher sessions.
 - [x] Move old method results, old evidence conclusions, and old logs out of
