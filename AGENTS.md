@@ -503,6 +503,16 @@ If the answer is unclear, inspect the plan/TODO files before proceeding.
   Slurm forecasts and experiment duration justify it.
   Shorter or non-H200 jobs may only be treated as code-path smoke checks, not
   as training evidence or evidence against a research direction.
+- Latest training-continuity override from 2026-06-13: do not let active
+  world-model training sit idle while waiting for an ideal multi-GPU block.
+  If a 4-GPU or 8-GPU allocation is pending, immediately use the best available
+  legal fallback that can make real progress, including 2 H200 GPUs or 1 H200
+  GPU, then migrate by interrupting the foreground process inside tmux with
+  `Ctrl-C` when the larger allocation actually starts. Keep GPU utilization
+  meaningfully above the cluster's low-utilization release threshold during
+  long training; do not leave held training allocations idle unless they are
+  being actively repurposed or debugged. Never run two training processes that
+  write to the same checkpoint/output directory at the same time.
 - RGB-D data generation and RGB-D world-model training are required core work,
   not optional follow-up. Synchronized RGB, depth, state, actions, env states,
   camera parameters, and object-pose labels must be generated so that the
