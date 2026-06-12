@@ -333,6 +333,118 @@ def resolve_eval_source_context(eval_root: Path, sample_name: str) -> dict[str, 
     return context
 
 
+def check_source_h5_contract(source_context: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    source_h5_value = source_context.get("source_h5")
+    result: dict[str, Any] = {
+        "source_h5": source_h5_value,
+        "ok": False,
+        "checks": {},
+        "boundary": (
+            "Source-H5 structure check only. It does not restore simulator "
+            "state or execute actions."
+        ),
+    }
+    if not source_h5_value:
+        result["error"] = "missing_source_h5"
+        return result
+
+    source_h5 = Path(str(source_h5_value))
+    if not source_h5.is_file():
+        result["error"] = "source_h5_not_found"
+        return result
+
+    try:
+        import h5py
+    except Exception as exc:
+        result["error"] = "h5py_import_failed"
+        result["exception"] = repr(exc)
+        return result
+
+    source_uuid = str(source_context.get("source_uuid") or "")
+    traj_name = "traj_0"
+    if "_traj_" in source_uuid:
+        traj_index = source_uuid.rsplit("_traj_", 1)[1].split("_", 1)[0]
+        if traj_index.isdigit():
+            traj_name = f"traj_{traj_index}"
+
+    with h5py.File(source_h5, "r") as h5:
+        if traj_name not in h5:
+            traj_name = "traj_0" if "traj_0" in h5 else ""
+        result["traj_name"] = traj_name
+        if not traj_name:
+            result["error"] = "missing_traj_group"
+            return result
+        group = h5[traj_name]
+
+        actions = group.get("actions")
+        env_states = group.get("env_states")
+        slots = group.get("slots")
+        checks = {
+            "actions_shape": bool(
+                actions is not None
+                and tuple(actions.shape) == (args.expected_action_steps, args.robot_action_dim)
+            ),
+            "env_states_present": env_states is not None,
+            "env_state_peg_frames": bool(
+                env_states is not None
+                and "actors" in env_states
+                and "peg" in env_states["actors"]
+                and env_states["actors"]["peg"].shape[0] == args.expected_video_frames
+            ),
+            "env_state_hole_frames": bool(
+                env_states is not None
+                and "actors" in env_states
+                and "box_with_hole" in env_states["actors"]
+                and env_states["actors"]["box_with_hole"].shape[0] == args.expected_video_frames
+            ),
+            "env_state_robot_frames": bool(
+                env_states is not None
+                and "articulations" in env_states
+                and "panda_wristcam" in env_states["articulations"]
+                and env_states["articulations"]["panda_wristcam"].shape[0] == args.expected_video_frames
+            ),
+            "slots_present": slots is not None,
+            "slots_tcp_frames": bool(
+                slots is not None
+                and "tcp_pose" in slots
+                and slots["tcp_pose"].shape[0] == args.expected_video_frames
+            ),
+            "slots_peg_frames": bool(
+                slots is not None
+                and "peg_pose" in slots
+                and slots["peg_pose"].shape[0] == args.expected_video_frames
+            ),
+            "slots_hole_frames": bool(
+                slots is not None
+                and "hole_pose" in slots
+                and slots["hole_pose"].shape[0] == args.expected_video_frames
+            ),
+        }
+        result["checks"] = checks
+        result["shapes"] = {
+            "actions": list(actions.shape) if actions is not None else None,
+            "env_states/actors/peg": (
+                list(env_states["actors"]["peg"].shape)
+                if env_states is not None and "actors" in env_states and "peg" in env_states["actors"]
+                else None
+            ),
+            "env_states/actors/box_with_hole": (
+                list(env_states["actors"]["box_with_hole"].shape)
+                if env_states is not None and "actors" in env_states and "box_with_hole" in env_states["actors"]
+                else None
+            ),
+            "env_states/articulations/panda_wristcam": (
+                list(env_states["articulations"]["panda_wristcam"].shape)
+                if env_states is not None
+                and "articulations" in env_states
+                and "panda_wristcam" in env_states["articulations"]
+                else None
+            ),
+        }
+        result["ok"] = all(checks.values())
+    return result
+
+
 def _to_float_matrix(value: Any) -> list[list[float]]:
     if not isinstance(value, list) or not value:
         raise ValueError("predicted action is not a non-empty list")
@@ -368,6 +480,7 @@ def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argp
     sample = samples[sample_index]
     sample_name = sample["name"]
     source_context = resolve_eval_source_context(eval_root, sample_name)
+    source_h5_contract = check_source_h5_contract(source_context, args)
     sample_outputs = read_json(eval_root / "inference" / sample_name / "sample_outputs.json")
     outputs = sample_outputs.get("outputs") or []
     content = (outputs[0].get("content") if outputs else None) or {}
@@ -407,6 +520,7 @@ def build_action_chunk_preview(eval_root: Path, condition_root: Path, args: argp
         "sample_index": sample_index,
         "sample_name": sample_name,
         "source_context": source_context,
+        "source_h5_contract": source_h5_contract,
         "prefix_role": sample.get("prefix_role"),
         "scenario": sample.get("scenario"),
         "prefix_frame_index": sample.get("prefix_frame_index"),
@@ -516,6 +630,8 @@ def main() -> int:
         failures.append("closed_loop_gate_blocked")
     if args.mode == "smoke" and not action_chunk_preview.get("source_context", {}).get("source_h5"):
         failures.append("live_source_h5_missing")
+    if args.mode == "smoke" and not action_chunk_preview.get("source_h5_contract", {}).get("ok"):
+        failures.append("source_h5_contract_failed")
 
     if failures:
         print(json.dumps({"closed_loop_preflight_ok": False, "failures": failures}, indent=2))

@@ -10,13 +10,26 @@
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
       first ended at Slurm wall time after rank-0 iteration `743`. It saved
       `iter_000000300` and `iter_000000600` before that time-limit stop.
-      On 2026-06-13 CST, training resumed from `iter_000000600` in held
-      Slurm job `127120` on `server40`.
-- [ ] Current continuation gate is active: held job `127289` on `server10`
-      runs step `127289.0` as the strict `iter_000000900`
-      eval/readout/profile/gate watcher. It is waiting for a stable
-      `iter_000000900` checkpoint and will write under:
+      On 2026-06-13 CST, training was resumed from `iter_000000600`, then
+      moved from a 2-H200 continuation to held 4-H200 Slurm job `127281` on
+      `server31`. The 2-H200 foreground training command was stopped by
+      allocation-internal process interruption/termination, not `scancel`;
+      its last durable checkpoint was still `iter_000000900`.
+- [x] The active fix1-recipe `iter_000000900` gate completed under:
       `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000000900`.
+      Strict artifacts and generated-RGB readout/profile passed structurally,
+      but direct agent review of all 10 ref/pred sheets failed the
+      controller handoff gate. Generated RGB broadly follows the scene, but
+      target hole, peg, and hand relative pose still drift visibly; generated
+      readout reports mean final hole error `0.1455857199` m, mean future
+      hole/peg/TCP RMSE `0.0790919085/0.0739520742/0.0702958154` m, and
+      robot-action future RMSE `0.7192880640`. `closed_loop_allowed=false`
+      is recorded with `visual_review_status=fail`.
+- [ ] Current continuation gate is active: held job `127289` on `server10`
+      runs step `127289.11` as the strict `iter_000001200`
+      eval/readout/profile/gate watcher. It is waiting for a stable
+      `iter_000001200` checkpoint and will write under:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001200`.
       This watcher is read-only with respect to SFT checkpoints.
 - [x] The already evaluated latest fix1-recipe `iter_000000300` and
       `iter_000000600` checkpoints are not controller-ready. They preserve
@@ -89,6 +102,14 @@
       `canonical_h5/peg_drop_seed705165_idx1029.fix3/peg_drop_seed705165_idx1029.h5`
       for the first eval sample. In `mode=smoke`, missing `source_h5` is now a
       hard preflight failure before any live simulator work can start.
+- [x] Extend the guarded preflight source-context check to validate the source
+      H5 episode structure before any live simulator work. A local read-only
+      function smoke on active fix1-recipe `iter_000000900` recovered
+      `canonical_h5/hole_late_move_stop_seed3280649_idx2518.fix3/hole_late_move_stop_seed3280649_idx2518.h5`
+      and verified `actions=[300,7]`, peg/hole/robot env-state groups with
+      `301` frames, and TCP/peg/hole slot trajectories with `301` frames.
+      This is a structural preflight only; it does not restore simulator
+      state or prove controller success.
 - [ ] Use the frozen static DP checkpoint only through its real ManiSkill
       state-policy interface:
       `experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt`.
