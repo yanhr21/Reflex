@@ -496,6 +496,67 @@ code path can run and that the current checkpoint produces partially useful
 approach motion; it does not prove dynamic task completion or DP handoff
 success.
 
+### Iter1800 10-Sample Live-Smoke Panels
+
+After the single-sample smoke, the held 1-H200 eval allocation `127350` was
+used for controller diagnostics instead of sitting idle. These diagnostics do
+not write checkpoints and do not affect the ongoing main or shadow SFT jobs.
+
+The first panel used one `8`-step Cosmos robot-action chunk followed by `32`
+frozen-DP resume steps, where the DP action chunk is recomputed from the latest
+live observation after each `act_horizon=8` segment:
+
+`closed_loop_smoke_iter_000001800_panel10_dp32_recompute_20260613_0810`
+
+Artifacts:
+
+- `panel_summary.json`
+- `panel_visual_review.json`
+- `panel_contact_sheet_start_cosmos_final.png`
+
+Result: `1/10` final simulator success. The single success was sample `6`, a
+`target_post_motion` continuous-insert case whose restored start state was
+already nearly at the hole (`before_norm=0.0034`). The inspected contact sheet
+shows the remaining samples approach or touch the block but do not complete
+insertion. This is negative diagnostic evidence for short DP handoff.
+
+The second panel used the same `8`-step Cosmos chunk but extended the
+recomputed frozen-DP resume horizon to `96` steps:
+
+`closed_loop_smoke_iter_000001800_representative_dp96_recompute_20260613_0816`
+
+Artifacts:
+
+- `panel_summary_full10_dp96.json`
+- `panel_contact_sheet_full10_dp96_start_cosmos_mid_final.png`
+
+Result: `6/10` final simulator success. Successes were samples
+`0, 1, 3, 4, 6, 8`; failures were `2, 5, 7, 9`.
+
+Per-sample final result:
+
+- `0` `hole_late_move_stop / target_pre_motion`: success, final norm `0.0076`
+- `1` `hole_late_constant / target_motion_observed`: success, final norm
+  `0.0252`
+- `2` `hole_late_reverse / target_post_motion`: failure, final norm `0.1201`
+- `3` `hole_late_fast_shift / insert_resume`: success, final norm `0.0104`
+- `4` `hole_late_sine / target_pre_motion`: success, final norm `0.0075`
+- `5` `hole_late_continuous_insert / target_motion_observed`: failure, final
+  norm `0.1185`
+- `6` `hole_late_continuous_insert / target_post_motion`: success, final norm
+  `0.0064`, but the start state was already very close to the hole
+- `7` `peg_drop / peg_recovery`: failure, final norm `0.1153`
+- `8` `none / static_monitor`: success, final norm `0.0051`
+- `9` `none / static_late_monitor`: failure, final norm `0.1321`
+
+The inspected DP96 contact sheet is visually consistent with the live metrics:
+the success rows show plausible final insertion positions, while the failed
+rows remain visibly non-inserted or misaligned. The interpretation is narrow:
+the current one-shot Cosmos chunk can put several samples into a state where a
+long DP resume eventually succeeds, but it is not the intended receding Cosmos
+world-model controller. It does not re-run Cosmos after each live observation,
+does not solve peg-drop recovery, and is not sufficient method evidence.
+
 ## Current Resource State After Two-GPU Correction
 
 At the latest check on 2026-06-13 CST:

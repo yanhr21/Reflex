@@ -30,6 +30,27 @@
       8-step DP chunks, sample `3` smoke executed `8 + 32` live steps and also
       ended `success=false`. Therefore `iter1800` is useful evidence that the
       gate/smoke code path runs, but it is not controller success evidence.
+- [x] Run an `iter1800` diagnostic live-smoke panel with `8` Cosmos action
+      steps plus `32` recomputed frozen-DP resume steps for all `10` validation
+      samples:
+      `closed_loop_smoke_iter_000001800_panel10_dp32_recompute_20260613_0810`.
+      The live wrapper completed for all samples, but only `1/10` reached
+      final simulator success, and that one was a `target_post_motion`
+      continuous-insert case that began essentially at the hole. The inspected
+      contact sheet records this as negative diagnostic evidence, not a method
+      success.
+- [x] Run a longer `iter1800` diagnostic live-smoke panel with `8` Cosmos
+      action steps plus `96` recomputed frozen-DP resume steps:
+      `closed_loop_smoke_iter_000001800_representative_dp96_recompute_20260613_0816`.
+      It reached final simulator success on `6/10` samples
+      (`hole_late_move_stop`, `hole_late_constant`, `hole_late_fast_shift`,
+      `hole_late_sine`, one `hole_late_continuous_insert`, and one static
+      `none`) and failed on `4/10` (`hole_late_reverse`, one
+      `hole_late_continuous_insert`, `peg_drop`, and static-late `none`).
+      The inspected contact sheet shows the successes are plausible insertions
+      after long DP resume, but this is still not full receding-Cosmos method
+      evidence: it uses one precomputed Cosmos action chunk followed by a long
+      DP takeover and does not re-run Cosmos after each live observation.
 - [x] The old 2-H200 fallback/watch logic is no longer the active path for
       `iter_000001500`; the 4-H200 auto-resume-after-checkpoint watcher
       launched the current `1500 -> 2100` continuation without concurrent

@@ -143,6 +143,22 @@
       request a fresh 1-H200 eval allocation after `iter_000002100` is stable.
       Its first poll at `2026-06-13T08:03:32+08:00` reported
       `latest=iter_000001500`, `has_target_dir=no`, `has_model_metadata=no`.
+- [x] While waiting for the main `iter2100` checkpoint, the held 1-H200 eval
+      allocation `127350` was used for useful controller diagnostics instead
+      of sitting idle. The `iter1800` full 10-sample live-smoke panel with
+      `8 + 32` steps reached only `1/10` final simulator success. The longer
+      `8 + 96` recomputed-DP-resume panel reached `6/10` final simulator
+      success but still failed reverse, one continuous-insert, peg-drop, and
+      static-late cases. This shows longer DP resume can complete several
+      samples after a Cosmos chunk, but the current interface is still a
+      diagnostic one-shot-chunk plus long DP takeover, not full receding
+      Cosmos closed-loop evidence.
+- [ ] A read-only strict eval/readout/profile chain for the independent
+      2-GPU shadow branch `iter_000001800` was launched on job `127350` with
+      output root
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637/eval_full_episode_wam_iter_000001800`.
+      This is a branch diagnostic only and does not replace the primary
+      main-root `iter2100` gate.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and
