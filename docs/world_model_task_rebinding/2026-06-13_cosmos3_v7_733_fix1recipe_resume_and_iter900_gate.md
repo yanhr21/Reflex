@@ -426,3 +426,92 @@ and reported only:
 
 No `live_smoke_result.json` was written. This confirms the new smoke branch is
 not reachable through a failed visual gate.
+
+## Iteration 1800 Gate And Live Smoke
+
+The strict `iter_000001800` eval/readout/profile chain completed in Slurm job
+`127350` on `server10` after the watcher repair described above. The eval root
+is:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000001800`
+
+Strict artifacts and generated-RGB readout/profile passed structurally:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- `10/10` generated samples
+- generated/reference video length stayed `301/301`
+- action targets stayed `300x32`
+- mean future PSNR `21.3364889524` dB
+- mean action RMSE `0.4717610396`
+- mean robot-action future RMSE `0.7097596116`
+- mean state-sidecar future RMSE `0.4995639550`
+- generated-RGB mean final hole position error `0.1150855990` m
+- mean future hole/peg/TCP RMSE `0.0634788298` / `0.0602868412` /
+  `0.0568269437` m
+- mean future peg-head-hole RMSE `0.0340992235` m
+
+The agent opened all `10` review sheets. Manual review is recorded in:
+
+`eval_full_episode_wam_iter_000001800/manual_visual_review.json`
+
+The visual verdict was `pass_with_caution`: `8` pass, `2`
+pass-with-caution, and `0` fail. The closed-loop gate file:
+
+`eval_full_episode_wam_iter_000001800/closed_loop_gate_visual_review.json`
+
+records `closed_loop_allowed=true`, but the boundary is only permission to run
+short live smoke. It is not controller success evidence.
+
+Two live smoke diagnostics were run from `iter1800`:
+
+1. Sample `0`:
+   `closed_loop_smoke_iter_000001800_20260613_0750`.
+   The smoke executed `8` Cosmos robot-action steps plus `8` frozen-DP resume
+   steps. It moved the peg-head closer to the hole but ended with
+   `final_eval.success=false`.
+2. Sample `3`:
+   `closed_loop_smoke_iter_000001800_sample3_dp32_recompute_20260613_0805`.
+   Before this run, a DP-resume implementation bug was fixed: longer resume
+   requests now repeatedly recompute the DP action chunk from the latest live
+   observation instead of silently executing only one `act_horizon=8` block.
+   The corrected smoke executed `8` Cosmos steps plus `32` recomputed
+   frozen-DP resume steps and still ended with `final_eval.success=false`.
+
+For sample `3`, the live metrics were:
+
+- before chunk: `peg_head_pos_at_hole=[-0.21998, 0.06211, -0.02498]`,
+  `success=false`
+- after Cosmos chunk: `[-0.16315, 0.03227, -0.01348]`, `success=false`
+- after 32 DP resume steps: `[-0.13554, 0.00051, 0.00050]`,
+  `success=false`
+
+The video contact sheet was opened:
+
+`closed_loop_smoke_iter_000001800_sample3_dp32_recompute_20260613_0805/live_smoke_short_chunk_contact_sheet.png`
+
+It visually matches the metrics: the robot/peg approach the target, but there
+is no completed insertion. Therefore `iter1800` proves the gated live smoke
+code path can run and that the current checkpoint produces partially useful
+approach motion; it does not prove dynamic task completion or DP handoff
+success.
+
+## Current Resource State After Two-GPU Correction
+
+At the latest check on 2026-06-13 CST:
+
+- Primary training job `127281` on `server31` is still the only writer to the
+  main SFT root. Slurm step `127281.38` requests `gres/gpu=4`. The log reached
+  rank-0 iteration `1893`, and `nvidia-smi` inside the allocation showed all
+  four GPUs at `100%` utilization.
+- Independent shadow training job `127286` on `server40` writes only the
+  separate 2-GPU shadow root. Slurm step `127286.27` requests `gres/gpu=2`.
+  The log reached rank-0 iteration `1774`, and `nvidia-smi` showed both GPUs
+  at `100%` utilization.
+- Eval/smoke job `127350` on `server10` was used for the `iter1800` live
+  smoke diagnostics. It is not an SFT writer.
+
+The next aligned checkpoint gate is `iter_000002100` from the primary main
+root or, if needed, from the independent 2-GPU shadow root. Any controller
+claim still requires strict artifacts, generated-RGB readout/profile, direct
+visual review, live simulator metrics, and inspected video evidence.

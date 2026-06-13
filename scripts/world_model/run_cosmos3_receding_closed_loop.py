@@ -549,9 +549,32 @@ def _render_frame(env: Any) -> Any:
     import numpy as np
 
     frame = env.render()
-    if isinstance(frame, list):
+    while isinstance(frame, (list, tuple)) and frame:
         frame = frame[0]
-    return np.asarray(frame)
+    if isinstance(frame, dict):
+        for key in ("rgb", "color", "Color", "image", "human"):
+            if key in frame:
+                frame = frame[key]
+                break
+        else:
+            frame = next(iter(frame.values()))
+    if hasattr(frame, "detach"):
+        frame = frame.detach().cpu().numpy()
+    arr = np.asarray(frame)
+    while arr.ndim > 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    if arr.ndim == 2:
+        arr = arr[:, :, None]
+    if arr.ndim == 3 and arr.shape[0] in (1, 3, 4) and arr.shape[-1] not in (1, 2, 3, 4):
+        arr = np.moveaxis(arr, 0, -1)
+    if arr.ndim != 3 or arr.shape[-1] not in (1, 2, 3, 4):
+        raise ValueError(f"Unsupported live render frame shape for video: {arr.shape}")
+    if arr.dtype != np.uint8:
+        arr = arr.astype(np.float32)
+        if arr.size and arr.max() <= 1.0:
+            arr = arr * 255.0
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(arr)
 
 
 def _action_space_bounds(env: Any, robot_action_dim: int) -> tuple[Any, Any]:
@@ -787,30 +810,40 @@ def run_live_smoke(
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             agent, dp_args = _load_dp_agent(env, stack, args, device)
             dp_agent_loaded = True
-            obs_tensor = common.to_tensor(obs, device)
-            with torch.no_grad():
-                action_seq = agent.get_action(obs_tensor)
-            if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu":
-                action_seq_np = action_seq.detach().cpu().numpy()
-            else:
-                action_seq_np = action_seq
-            for local_i in range(min(dp_resume_horizon, int(action_seq_np.shape[1]))):
-                step_action = action_seq_np[:, local_i]
-                obs, reward, terminated, truncated, info = env.step(step_action)
-                live = _live_eval(base_env)
-                dp_steps.append(
-                    {
-                        "local_step": local_i,
-                        "reward": jsonable(reward),
-                        "terminated": jsonable(terminated),
-                        "truncated": jsonable(truncated),
-                        "live_eval": live,
-                    }
-                )
-                if args.capture_live_video:
-                    frames.append(_render_frame(env))
+            dp_call_index = 0
+            while len(dp_steps) < dp_resume_horizon:
+                obs_tensor = common.to_tensor(obs, device)
+                with torch.no_grad():
+                    action_seq = agent.get_action(obs_tensor)
+                if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu":
+                    action_seq_np = action_seq.detach().cpu().numpy()
+                else:
+                    action_seq_np = action_seq
+                act_horizon = int(action_seq_np.shape[1])
+                if act_horizon <= 0:
+                    break
+                for chunk_local_i in range(min(dp_resume_horizon - len(dp_steps), act_horizon)):
+                    step_action = action_seq_np[:, chunk_local_i]
+                    obs, reward, terminated, truncated, info = env.step(step_action)
+                    live = _live_eval(base_env)
+                    dp_steps.append(
+                        {
+                            "local_step": len(dp_steps),
+                            "dp_call_index": dp_call_index,
+                            "chunk_local_step": chunk_local_i,
+                            "reward": jsonable(reward),
+                            "terminated": jsonable(terminated),
+                            "truncated": jsonable(truncated),
+                            "live_eval": live,
+                        }
+                    )
+                    if args.capture_live_video:
+                        frames.append(_render_frame(env))
+                    if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
+                        break
                 if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
                     break
+                dp_call_index += 1
 
         final_eval = _live_eval(base_env)
         video_written = False

@@ -2,10 +2,12 @@
 
 ## Current Gate
 
-- [ ] Do not start live DP/controller evaluation from the current v7_733
+- [x] Do not start live DP/controller evaluation from the current v7_733
       follow-up SFT until a checkpoint passes all three gates:
       strict same-length generated artifacts, generated-RGB readout/profile,
-      and direct visual review of all validation sheets/videos.
+      and direct visual review of all validation sheets/videos. This gate was
+      first satisfied only for a guarded diagnostic live smoke at `iter1800`,
+      not for a controller-success claim.
 - [x] The latest fix1-recipe root
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
       first ended at Slurm wall time after rank-0 iteration `743`, then was
@@ -19,12 +21,15 @@
       `03`, `04`, `08`, and `09`: late robot/peg/target relative geometry
       drifts and is not DP-resumable. `closed_loop_allowed=false` is recorded
       with `visual_review_status=fail`.
-- [ ] Current continuation gate is active at `iter_000001800`. Main watcher
-      `cosmos3_v7_733_iter1800_watch_0613` runs on held job `127288` and writes
-      `eval_full_episode_wam_iter_000001800`; extra30 watcher
-      `cosmos3_v7_733_iter1800_extra30_2gpu_0613` runs on held job `127286`
-      and writes `eval_full_episode_wam_iter_000001800_extra30_2gpu_20260613`.
-      Both are read-only with respect to SFT checkpoints.
+- [x] The `iter_000001800` gate completed through strict eval, generated-RGB
+      readout/profile, manual visual review, and short live smoke. Strict
+      artifacts and readout passed structurally; manual review of all `10`
+      sheets recorded `pass_with_caution` and allowed diagnostic smoke only.
+      Sample `0` smoke executed `8 + 8` live steps and ended
+      `success=false`. After repairing DP resume to recompute repeated
+      8-step DP chunks, sample `3` smoke executed `8 + 32` live steps and also
+      ended `success=false`. Therefore `iter1800` is useful evidence that the
+      gate/smoke code path runs, but it is not controller success evidence.
 - [x] The old 2-H200 fallback/watch logic is no longer the active path for
       `iter_000001500`; the 4-H200 auto-resume-after-checkpoint watcher
       launched the current `1500 -> 2100` continuation without concurrent
@@ -175,20 +180,19 @@
       normalization stats, validation seeds/scenarios, and evidence boundary.
       Current implementation is guarded by generated artifact/readout/visual
       gates and can run the short live smoke only after those gates pass.
-- [ ] Add a Python entry point, e.g.
+- [x] Add a Python entry point, e.g.
       `scripts/world_model/run_cosmos3_receding_closed_loop.py`, with an
       initial one-env smoke mode:
       reset dynamic ManiSkill episode, maintain real observation history,
       call the Cosmos full-episode policy inference for a causal prefix,
       de-normalize and execute at most `8` robot actions, reobserve, and
       repeat until termination or `300` steps.
-      Current implementation performs compute-node/gate/contract preflight
-      and refuses weak checkpoints; `mode=smoke` still exits before live
-      `env.step` with
-      `live_receding_smoke_not_implemented_in_this_guarded_entrypoint_yet`.
-      Implementing this real live-smoke path is the next controller-side code
-      task after a checkpoint passes the strict generated artifact/readout/
-      visual gate.
+      Current implementation performs compute-node/gate/contract preflight,
+      refuses weak checkpoints, restores the selected source H5 prefix state,
+      executes a short de-normalized Cosmos action chunk, then can recompute
+      repeated 8-step frozen-DP resume chunks from live observations. It has
+      run as a negative diagnostic on `iter1800`; a full receding Cosmos
+      re-prediction loop after every live observation is still pending.
 - [ ] Save for every rollout: live RGB video, per-step executed robot action,
       generated action/state sidecars, real simulator metrics, target/peg/TCP
       readout trajectory, final success predicates, and a review sheet.
@@ -201,6 +205,10 @@
       panel from the testing plan: static/none, pre-motion target forecast,
       observed target motion, move-stop, reverse, peg disturbance, and
       peg-drop/regrasp.
+- [ ] Next gate target is the continued SFT checkpoint `iter_000002100`.
+      Main 4-H200 job `127281` and independent 2-H200 shadow job `127286` are
+      both running; evaluate whichever checkpoint is complete and visually
+      strongest without starting concurrent writers into the same root.
 
 ## Negative Cases To Preserve
 

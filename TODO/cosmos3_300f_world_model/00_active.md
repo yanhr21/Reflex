@@ -112,6 +112,31 @@
       of blocking. Tmux
       `cosmos3_v7_733_iter1800_eval_request_on_ckpt_v2_0613` requested
       1-H200 Slurm job `127350` for the strict iter1800 eval/readout/gate.
+- [x] Iter1800 strict eval/readout/profile completed in Slurm job `127350` on
+      `server10`. Structural gates passed for `10/10` samples:
+      generated/reference videos stayed `301/301`, action tensors stayed
+      `300x32`, and `strict_failures=[]`. Manual review opened all `10`
+      review sheets and recorded `pass_with_caution`: `8` pass,
+      `2` pass-with-caution, `0` fail. This allowed only gated live smoke,
+      not controller success evidence.
+- [x] Iter1800 live-smoke diagnostics ran after the visual gate. Sample `0`
+      executed an `8`-step Cosmos action chunk plus `8` DP resume steps and
+      did not reach final success. A DP-resume implementation bug was then
+      fixed: requests longer than the DP `act_horizon=8` now repeatedly
+      recompute DP actions from the latest observation instead of silently
+      executing only one 8-step block. Corrected sample `3` executed
+      `8 + 32` steps and still ended with `success=false`; visual contact
+      sheet review agrees that insertion was not completed. These are
+      negative live controller diagnostics, not method success.
+- [x] Current resource use after the 2-card correction: primary SFT job
+      `127281` on `server31` is still the only writer to the main root and was
+      observed at rank-0 iteration `1893`; all `4` GPUs were at `100%`
+      utilization. Independent two-GPU shadow continuation job `127286` on
+      `server40` writes only
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`,
+      was observed at iteration `1774`, and both GPUs were at `100%`
+      utilization. The one-GPU eval allocation `127350` was used for live
+      smoke diagnostics and must not be counted as SFT training.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and

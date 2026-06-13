@@ -29,34 +29,34 @@
       fix1-recipe root had saved only `iter_000000300` and `iter_000000600`.
       Old `normactive_clip1` iter900/iter1200 notes remain historical negative
       diagnostics and must not be treated as the active review gate.
-- [ ] Current 2026-06-13 continuation gate is pending at `iter_000001800`.
-      Training has resumed from `iter_000001500` toward `iter_000002100` in
-      held Slurm job `127281` on `server31`. Read-only `iter_000001800`
-      main-gate watcher is active in tmux
-      `cosmos3_v7_733_iter1800_watch_0613` on job `127288`. The 2-H200 job
-      `127286` was reallocated from the optional extra30 panel to an
-      independent shadow SFT continuation in tmux
-      `cosmos3_v7_733_shadow2gpu_from1500_to2100_0613`. This shadow branch
-      starts from a hardlinked copy of the main `iter_000001500` checkpoint and
-      writes only its own 2-GPU output root, so it keeps the no-concurrent-writer
-      rule for the 4-H200 main root while preventing the spare allocation from
-      sitting idle.
-- [ ] The original read-only `iter1800` eval watcher on Slurm step `127288.23`
-      was terminated by Slurm before the checkpoint existed. Replacement tmux
-      `cosmos3_v7_733_iter1800_eval_request_on_ckpt_0613` is active as a
-      checkpoint-file poller and will request a fresh 1-H200 allocation only
-      after `iter_000001800` is saved. This avoids idle GPU allocation while
-      preserving the strict eval/readout/visual-gate sequence.
-- [ ] `iter_000001800` has been saved and is structurally present under the
-      checkpoint root, but `latest_checkpoint.txt` still reports
-      `iter_000001500`. The replacement watcher was corrected to trigger from
-      the stable target checkpoint directory and `model/.metadata`; Slurm job
-      `127350` is pending for the 1-H200 eval allocation. Do not treat iter1800
-      as reviewed until that eval/readout/profile and manual visual sheet review
-      finish.
-      No controller or DP integration may start until a future gate passes
-      strict artifacts, generated-RGB readout/profile, and explicit visual
-      review evidence.
+- [x] The 2026-06-13 `iter_000001800` continuation gate completed in Slurm job
+      `127350`. The first read-only watcher `127288` was terminated by Slurm
+      while waiting for the checkpoint; the replacement request watcher was
+      repaired to trigger from the stable target checkpoint directory and
+      `model/.metadata` because `latest_checkpoint.txt` still pointed at
+      `iter_000001500`. Strict artifacts passed for `10/10` samples under the
+      `301` RGB/state frame and `300x32` action contract, generated-RGB
+      readout/profile passed structurally, and manual review opened all
+      `10` sheets.
+- [x] Iter1800 visual review is `pass_with_caution`, not a method success:
+      `8` sheets passed and `2` were pass-with-caution. The resulting
+      `closed_loop_gate_visual_review.json` allowed only guarded live smoke.
+      Two live smoke diagnostics were then run: sample `0` executed `8 + 8`
+      steps and sample `3` executed a corrected `8 + 32` recomputed-DP-resume
+      sequence. Both ended with live simulator `success=false`; the inspected
+      contact sheet for sample `3` shows approach toward the block but no
+      completed insertion.
+- [x] Current 2026-06-13 training continuation is still active at both scales.
+      Primary job `127281` on `server31` writes the main root only and was
+      observed around iteration `1893` with all `4` GPUs at `100%` utilization.
+      Independent shadow job `127286` on `server40` writes only its separate
+      2-GPU root and was observed around iteration `1774` with both GPUs at
+      `100%` utilization.
+- [ ] Next completed checkpoint to review is `iter_000002100` from the primary
+      main root or, if the primary fails, the independent 2-GPU shadow root.
+      No controller/DP success claim may be made until a future gate passes
+      strict artifacts, generated-RGB readout/profile, explicit visual review,
+      and live simulator/video evidence.
 - [ ] No controller or DP integration may be launched from the current v7_733
       line until a future completed checkpoint passes strict artifact accounting,
       generated-RGB readout/profile, and visual review for target motion,
