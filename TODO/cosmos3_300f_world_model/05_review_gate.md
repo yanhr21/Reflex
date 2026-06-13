@@ -66,8 +66,13 @@
       login node and will use held eval allocation `127350` once the
       checkpoint is stable. Primary job `127281.40` continues toward
       `iter_000002700`; independent shadow job `127286.33` has also resumed
-      from `2100 -> 2700` in its separate 2-GPU root. No controller/DP success
-      claim may be made until a future gate passes strict artifacts,
+      from `2100 -> 2700` in its separate 2-GPU root. Protection watchers are
+      now armed for both roots so held SFT GPUs do not go idle after `2700`:
+      main tmux `cosmos3_v7_733_main4gpu_auto_from2700_to3300_0613`, shadow
+      tmux `cosmos3_v7_733_shadow2gpu_auto_from2700_to3300_0613`. They launch
+      only after `iter_000002700` is fully written and no active non-extern
+      Slurm step remains in the corresponding allocation. No controller/DP
+      success claim may be made until a future gate passes strict artifacts,
       generated-RGB readout/profile, explicit visual review, and live
       simulator/video evidence.
 - [x] The independent 2-GPU shadow branch `iter_000001800` was evaluated as a

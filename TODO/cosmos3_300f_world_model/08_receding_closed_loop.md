@@ -256,8 +256,13 @@
       node and will use held eval allocation `127350` for strict eval/readout
       once the checkpoint is stable. Primary 4-H200 SFT `127281.40` continues
       from `2100 -> 2700`; independent 2-H200 shadow continuation `127286`
-      is watched so it can also resume from `2100 -> 2700` without leaving
-      the two cards idle.
+      is actively running from `2100 -> 2700` in its separate root. Additional
+      no-concurrent-writer watchers are armed for both `2700 -> 3300`
+      continuations, so held 4-H200 and 2-H200 resources do not sit below the
+      utilization floor after the current target checkpoint. These are SFT
+      continuation guards only; closed-loop method evidence still requires a
+      future checkpoint to pass strict generated artifacts, generated-RGB
+      readout/profile, manual visual review, and live simulator/video review.
 
 ## Negative Cases To Preserve
 

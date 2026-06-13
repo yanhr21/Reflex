@@ -716,6 +716,26 @@ complete, then resumes that independent shadow root from `2100 -> 2700` inside
 the same held allocation. This preserves the no-concurrent-writer rule while
 avoiding idle two-GPU resources.
 
+After the correction that remaining two GPUs must also be used for continued
+SFT, both branches were confirmed active:
+
+- primary 4-H200 main-root step `127281.40` on `server31`, observed training
+  around rank-0 iteration `2199`
+- independent 2-H200 shadow-root step `127286.33` on `server40`, observed
+  training around rank-0 iteration `2108`
+
+Two additional no-concurrent-writer continuation watchers were armed:
+
+- main tmux `cosmos3_v7_733_main4gpu_auto_from2700_to3300_0613`, log
+  `sft_train_4gpu_auto_resume_after2700_to3300_20260613_0951.watch.log`
+- shadow tmux `cosmos3_v7_733_shadow2gpu_auto_from2700_to3300_0613`, log
+  `sft_train_2gpu_auto_resume_after2700_to3300_20260613_0953.watch.log`
+
+Each watcher only launches after `iter_000002700` exists, is the latest
+checkpoint, and the corresponding allocation has no active non-extern Slurm
+step. This is a resource-protection continuation and does not change the
+training recipe, checkpoint roots, frame/action contract, or evidence gate.
+
 The next primary checkpoint gate is `iter_000002400`. Tmux
 `cosmos3_v7_733_iter2400_eval_existing127350_0613` polls checkpoint files on
 the login node and will use held allocation `127350` for strict

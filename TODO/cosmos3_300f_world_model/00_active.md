@@ -179,6 +179,19 @@
       future peg-head-hole RMSE `0.0318` m. Direct review of all `10` sheets
       found no old geometry-collapse/white-fog failure, but several final
       relative poses are still too imprecise for closed-loop handoff.
+- [x] 2026-06-13 resource-protection update after the two-card correction:
+      primary 4-H200 step `127281.40` is actively training the main root from
+      `iter_000002100 -> iter_000002700`, and independent 2-H200 step
+      `127286.33` is actively training the shadow root from
+      `iter_000002100 -> iter_000002700`. Both roots now also have
+      no-concurrent-writer protection watchers for `2700 -> 3300`:
+      `cosmos3_v7_733_main4gpu_auto_from2700_to3300_0613` and
+      `cosmos3_v7_733_shadow2gpu_auto_from2700_to3300_0613`. These watchers
+      only launch after the target `iter_000002700` checkpoint exists, is the
+      latest checkpoint, and the allocation has no non-extern Slurm step.
+      They are intended to prevent held GPUs from idling after the current
+      600-step continuation, not to change the SFT recipe or write into the
+      same root concurrently.
 - [x] Iter600 strict eval/readout/profile completed in held auxiliary
       allocation `127120` on `server40`. Structural gates still pass for
       `10` samples: generated/reference videos are `301/301`, actions are
