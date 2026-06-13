@@ -237,6 +237,20 @@
 - [ ] Save for every rollout: live RGB video, per-step executed robot action,
       generated action/state sidecars, real simulator metrics, target/peg/TCP
       readout trajectory, final success predicates, and a review sheet.
+- [x] Add a reusable compute-node-only live-smoke panel wrapper for future
+      gated checkpoints:
+      `scripts/slurm/run_cosmos3_closed_loop_panel_in_allocation.sh`, plus
+      summarizer/contact-sheet tool
+      `scripts/world_model/summarize_cosmos3_closed_loop_panel.py`. This
+      preserves the current diagnostic boundary: it serializes the existing
+      gated `MODE=smoke` wrapper across validation sample indices, executes
+      one `<=8`-step Cosmos action chunk plus a configured recomputed-DP
+      resume horizon, records live simulator metrics/videos, and generates a
+      start/mid/final contact sheet for agent review. It does not implement
+      full online receding Cosmos re-inference and must not be reported as
+      method-level controller evidence. The summarizer was tested read-only
+      on the existing `iter2100` DP96 panel and reproduced `10/10` completed,
+      `5/10` final success, with success indices `[0,1,3,6,8]`.
 - [ ] Run a tiny compute-node smoke first. It passes only if length accounting,
       action de-normalization, live `env.step`, video recording, and final
       metrics all complete without using sidecar/oracle state.

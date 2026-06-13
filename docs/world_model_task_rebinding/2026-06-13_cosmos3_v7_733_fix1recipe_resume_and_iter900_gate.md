@@ -740,3 +740,37 @@ The next primary checkpoint gate is `iter_000002400`. Tmux
 `cosmos3_v7_733_iter2400_eval_existing127350_0613` polls checkpoint files on
 the login node and will use held allocation `127350` for strict
 eval/readout/profile once `iter_000002400` is stable.
+
+## Closed-Loop Panel Runner Hardening
+
+While `iter_000002400` was still training, the diagnostic closed-loop panel
+path was converted from ad-hoc sample loops into reusable tools:
+
+- `scripts/slurm/run_cosmos3_closed_loop_panel_in_allocation.sh`
+- `scripts/world_model/summarize_cosmos3_closed_loop_panel.py`
+
+The physical problem this solves is execution hygiene for the next gate: once
+a checkpoint passes generated-artifact/readout/visual review, the agent should
+run the same representative validation panel without retyping per-sample
+commands or accidentally changing action horizon, DP resume horizon, eval
+root, or visual-gate status. The wrapper refuses login-node execution and
+serializes the existing gated `MODE=smoke` path inside one compute Slurm step.
+
+This does not change the method boundary. The panel still executes one
+precomputed `<=8`-step Cosmos action chunk from the generated eval output,
+then optionally runs a recomputed frozen-DP resume horizon. It is useful
+diagnostic live simulator evidence, but it is not full online receding Cosmos
+controller evidence because Cosmos is not re-run after every live
+re-observation.
+
+The summarizer was tested read-only on the existing `iter2100` DP96 panel. It
+reproduced the known result:
+
+- `10/10` completed sample wrappers
+- `5/10` final simulator success
+- success indices `[0,1,3,6,8]`
+- failure indices `[2,4,5,7,9]`
+
+It also generated a temporary `/tmp` start/mid/final contact sheet, confirming
+that the next panel will produce reviewable visual evidence instead of
+metrics-only output.
