@@ -774,3 +774,65 @@ reproduced the known result:
 It also generated a temporary `/tmp` start/mid/final contact sheet, confirming
 that the next panel will produce reviewable visual evidence instead of
 metrics-only output.
+
+## Iter2400 Gate And Resource Status
+
+The held two-H200 branch was rechecked after the user asked why the remaining
+two GPUs were not being used. The answer from current Slurm state is that they
+were being used for SFT, not left idle:
+
+- Slurm job `127286` on `server40` requests `gres/gpu=2`.
+- Active step `127286.33` was observed training the independent shadow root
+  from `iter_000002100 -> iter_000002700`.
+- `nvidia-smi` inside the allocation showed both GPUs at `100%` utilization
+  with about `79` GB memory used each.
+- The shadow root is separate from the main 4-H200 root to preserve the
+  no-concurrent-writer rule while still using the two held GPUs.
+
+The main 4-H200 branch was also active at the same check:
+
+- Slurm job `127281`, step `127281.40`, on `server31`.
+- `nvidia-smi` showed all four GPUs at `100%` utilization.
+- The log was observed around rank-0 iteration `2464`, still training toward
+  `iter_000002700`.
+
+`iter_000002400` completed strict eval/readout/profile on held allocation
+`127350`. The structural gate passed:
+
+- generated/reference videos: full `301/301` contract
+- action tensors: full `300x32` contract
+- `strict_failures=[]`
+
+Controller-facing metrics were worse than `iter_000002100`:
+
+- mean future video PSNR: `21.3822` dB
+- mean robot-action future RMSE: `0.7619`
+- mean state-sidecar future RMSE: `0.5075`
+- generated-RGB mean final hole error: `0.1161` m
+- generated-RGB future hole/peg/TCP RMSE:
+  `0.0647 / 0.0647 / 0.0603` m
+
+All ten review sheets were opened directly. Manual visual review failed
+`iter_000002400` for controller handoff. The dominant failures are late/final
+robot/peg/hole relative-geometry drift in sheets `00`, `04`, and `08`; this is
+not a frame-length or checkpoint-load failure, but it is enough to block DP
+resume from this checkpoint.
+
+Recorded artifacts:
+
+- `eval_full_episode_wam_iter_000002400/manual_visual_review.json`
+- `eval_full_episode_wam_iter_000002400/closed_loop_gate_visual_review.json`
+
+The gate records `closed_loop_allowed=false` with reason
+`explicit_visual_review_not_passed`. No closed-loop smoke should be launched
+from `iter_000002400`. Training should continue to later checkpoints while
+the held allocations remain active.
+
+An `iter_000002700` eval watcher is now armed:
+
+- tmux `cosmos3_v7_733_iter2700_eval_existing127350_0613`
+- existing eval allocation `127350`
+- output root `eval_full_episode_wam_iter_000002700`
+- boundary: login node polls checkpoint files only, then strict
+  eval/readout/profile runs inside the held 1-H200 allocation after
+  `iter_000002700` is stable

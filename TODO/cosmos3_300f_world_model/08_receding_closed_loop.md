@@ -71,6 +71,17 @@
       controller-negative relative to the required method because it still
       uses one precomputed Cosmos chunk followed by long DP takeover and does
       not improve over the previous `iter1800` DP96 diagnostic.
+- [x] `iter_000002400` completed strict eval/readout/profile and direct visual
+      review, but it is blocked for closed-loop. Structural artifacts passed
+      under the full `301` RGB/state frame and `300x32` action contract, but
+      controller-facing metrics regressed versus `iter2100`
+      (`mean_final_hole_pos_error_m=0.1161`, future hole/peg/TCP RMSE
+      `0.0647/0.0647/0.0603`, robot-action future RMSE `0.7619`). Direct
+      review of all ten sheets failed samples `00`, `04`, and `08` for
+      late/final robot-peg-hole relative-geometry drift. The gate file records
+      `closed_loop_allowed=false` with reason
+      `explicit_visual_review_not_passed`; do not launch smoke from
+      `iter2400`.
 - [x] The old 2-H200 fallback/watch logic is no longer the active path for
       `iter_000001500`; the 4-H200 auto-resume-after-checkpoint watcher
       launched the current `1500 -> 2100` continuation without concurrent
@@ -265,18 +276,18 @@
       observed target motion, move-stop, reverse, peg disturbance, and
       peg-drop/regrasp.
 - [ ] Next gate target is the continued primary SFT checkpoint
-      `iter_000002400`. Tmux
-      `cosmos3_v7_733_iter2400_eval_existing127350_0613` polls on the login
-      node and will use held eval allocation `127350` for strict eval/readout
-      once the checkpoint is stable. Primary 4-H200 SFT `127281.40` continues
-      from `2100 -> 2700`; independent 2-H200 shadow continuation `127286`
-      is actively running from `2100 -> 2700` in its separate root. Additional
-      no-concurrent-writer watchers are armed for both `2700 -> 3300`
-      continuations, so held 4-H200 and 2-H200 resources do not sit below the
-      utilization floor after the current target checkpoint. These are SFT
-      continuation guards only; closed-loop method evidence still requires a
-      future checkpoint to pass strict generated artifacts, generated-RGB
-      readout/profile, manual visual review, and live simulator/video review.
+      `iter_000002700`, because `iter_000002400` is visual-review blocked.
+      Primary 4-H200 SFT `127281.40` continues from `2100 -> 2700`;
+      independent 2-H200 shadow continuation `127286.33` is actively running
+      from `2100 -> 2700` in its separate root. Both allocations were checked
+      from compute nodes with `nvidia-smi`: all four main GPUs and both shadow
+      GPUs were at `100%` utilization. Additional no-concurrent-writer
+      watchers are armed for both `2700 -> 3300` continuations, so held SFT
+      resources do not sit below the utilization floor after the current
+      target checkpoint. These are SFT continuation guards only; closed-loop
+      method evidence still requires a future checkpoint to pass strict
+      generated artifacts, generated-RGB readout/profile, manual visual
+      review, and live simulator/video review.
 
 ## Negative Cases To Preserve
 

@@ -60,11 +60,16 @@
       success on `5/10` samples, with the contact sheet matching metrics.
       This is not controller success evidence and not a full receding-Cosmos
       method result.
+- [x] Primary main-root `iter_000002400` review completed and is
+      controller-blocked. Strict generated artifacts/readout/profile passed
+      with the full `301` RGB frame and `300x32` action contract, but metrics
+      regressed versus `iter2100` and manual review failed sheets `00`, `04`,
+      and `08` for late/final robot-peg-hole relative-geometry drift. The
+      formal gate records `closed_loop_allowed=false` with reason
+      `explicit_visual_review_not_passed`; no smoke or controller integration
+      may be launched from `iter2400`.
 - [ ] Next completed checkpoint to review is primary main-root
-      `iter_000002400`. Tmux
-      `cosmos3_v7_733_iter2400_eval_existing127350_0613` is polling on the
-      login node and will use held eval allocation `127350` once the
-      checkpoint is stable. Primary job `127281.40` continues toward
+      `iter_000002700`. Primary job `127281.40` continues toward
       `iter_000002700`; independent shadow job `127286.33` has also resumed
       from `2100 -> 2700` in its separate 2-GPU root. Protection watchers are
       now armed for both roots so held SFT GPUs do not go idle after `2700`:
@@ -75,6 +80,11 @@
       success claim may be made until a future gate passes strict artifacts,
       generated-RGB readout/profile, explicit visual review, and live
       simulator/video evidence.
+- [x] Primary `iter2700` eval watcher is armed in tmux
+      `cosmos3_v7_733_iter2700_eval_existing127350_0613`. It only polls
+      checkpoint files on the login node and will use the existing held
+      1-H200 allocation `127350` for strict eval/readout/profile after
+      `iter_000002700` is stable.
 - [x] The independent 2-GPU shadow branch `iter_000001800` was evaluated as a
       read-only branch diagnostic on held job `127350`. Strict artifacts and
       generated-RGB readout/profile passed structurally, but manual visual

@@ -192,6 +192,20 @@
       They are intended to prevent held GPUs from idling after the current
       600-step continuation, not to change the SFT recipe or write into the
       same root concurrently.
+- [x] 2026-06-13 two-card utilization recheck: the 2-H200 allocation is not
+      idle. Slurm job `127286` requests `gres/gpu=2`, and compute-node
+      `nvidia-smi` inside `server40` showed both GPUs at `100%` utilization
+      with about `79GB` used per GPU while step `127286.33` trained the
+      independent shadow root. Main job `127281` on `server31` simultaneously
+      showed all four GPUs at `100%` utilization while step `127281.40`
+      trained the main root.
+- [x] Primary `iter_000002400` strict eval/readout/profile and visual review
+      completed. Structural artifacts passed (`301/301` videos,
+      `300x32` actions, `strict_failures=[]`), but metrics regressed versus
+      `iter2100` and manual review failed sheets `00`, `04`, and `08` for
+      late/final robot-peg-hole relative-geometry drift. The recorded gate is
+      `closed_loop_allowed=false`, reason `explicit_visual_review_not_passed`;
+      no closed-loop smoke should run from `iter2400`.
 - [x] Iter600 strict eval/readout/profile completed in held auxiliary
       allocation `127120` on `server40`. Structural gates still pass for
       `10` samples: generated/reference videos are `301/301`, actions are
@@ -929,11 +943,10 @@
       sheet matches the metrics: failed rows remain visibly uninserted or
       misaligned. This is not full receding-Cosmos controller evidence and not
       a method success claim.
-- [x] A login-side watcher for primary `iter_000002400` eval is now active in
-      tmux `cosmos3_v7_733_iter2400_eval_existing127350_0613`. It only polls
-      checkpoint files on the login node and will use existing allocation
-      `127350` for strict eval/readout/profile once `iter_000002400` is
-      stable.
+- [x] The login-side watcher for primary `iter_000002400` eval used existing
+      allocation `127350` and completed the strict eval/readout/profile chain.
+      Agent visual review then blocked the checkpoint; the next primary gate
+      is `iter_000002700`, not `iter2400`.
 - [ ] Future closed-loop work must follow
       `TODO/cosmos3_300f_world_model/08_receding_closed_loop.md`: no one-shot
       300-step open-loop Cosmos execution, no sidecar/oracle simulator state,
