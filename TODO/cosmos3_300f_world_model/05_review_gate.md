@@ -57,6 +57,21 @@
       No controller/DP success claim may be made until a future gate passes
       strict artifacts, generated-RGB readout/profile, explicit visual review,
       and live simulator/video evidence.
+- [x] The independent 2-GPU shadow branch `iter_000001800` was evaluated as a
+      read-only branch diagnostic on held job `127350`. Strict artifacts and
+      generated-RGB readout/profile passed structurally, but manual visual
+      review failed the controller handoff gate: `hole_late_fast_shift`
+      insert-resume, `peg_drop` recovery, and static-monitor samples show
+      non-resumable peg/hand/target relative geometry. The branch gate records
+      `closed_loop_allowed=false` and does not replace the primary main-root
+      `iter2100` gate.
+- [x] The main-root `iter2100` watcher now targets the existing held 1-H200
+      allocation `127350` instead of requesting a fresh `salloc`. The new
+      script
+      `scripts/slurm/watch_cosmos3_checkpoint_then_existing_alloc_eval.sh`
+      performs login-node file polling only, then launches the strict
+      eval/readout/profile chain inside the held allocation after the
+      checkpoint is stable.
 - [ ] No controller or DP integration may be launched from the current v7_733
       line until a future completed checkpoint passes strict artifact accounting,
       generated-RGB readout/profile, and visual review for target motion,

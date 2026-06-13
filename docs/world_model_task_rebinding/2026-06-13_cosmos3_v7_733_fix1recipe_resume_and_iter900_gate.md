@@ -576,3 +576,64 @@ The next aligned checkpoint gate is `iter_000002100` from the primary main
 root or, if needed, from the independent 2-GPU shadow root. Any controller
 claim still requires strict artifacts, generated-RGB readout/profile, direct
 visual review, live simulator metrics, and inspected video evidence.
+
+## Shadow Iter1800 Branch Diagnostic
+
+While the primary 4-H200 SFT continued toward `iter_000002100`, the held
+1-H200 eval allocation `127350` was used to evaluate the independent 2-GPU
+shadow branch at `iter_000001800`. This branch writes only:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`
+
+The eval root is:
+
+`sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637/eval_full_episode_wam_iter_000001800`
+
+Strict artifacts and generated-RGB readout/profile passed structurally:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- `strict_readout_eval_ok=true`
+- mean future PSNR `20.8650219770` dB
+- mean action RMSE `0.4920883197`
+- mean robot-action future RMSE `0.7290105271`
+- mean state-sidecar future RMSE `0.5402163232`
+- generated-RGB mean final hole position error `0.1166951584` m
+- mean future hole/peg/TCP RMSE `0.0651412586` / `0.0658651109` /
+  `0.0603592611` m
+- mean future peg-head-hole RMSE `0.0339960731` m
+
+The agent inspected the review-sheet overview and opened the key failure
+sheets directly. Manual visual review is recorded at:
+
+`eval_full_episode_wam_iter_000001800/manual_visual_review.json`
+
+The branch visual gate is failed. `hole_late_fast_shift` insert-resume,
+`peg_drop` recovery, and static-monitor samples show non-resumable
+peg/hand/target relative geometry. The gate file:
+
+`eval_full_episode_wam_iter_000001800/closed_loop_gate_visual_review.json`
+
+records `visual_review_status=fail` and `closed_loop_allowed=false`. The
+shadow branch therefore does not replace the primary main-root gate.
+
+## Iter2100 Eval Watcher Adjustment
+
+The original `iter2100` request watcher would have requested a fresh 1-H200
+`salloc` after the checkpoint appeared. After `127350` became idle again, that
+tmux watcher was stopped by sending `Ctrl-C` to its pane; no Slurm allocation
+was cancelled.
+
+A new reusable script was added:
+
+`scripts/slurm/watch_cosmos3_checkpoint_then_existing_alloc_eval.sh`
+
+It only polls checkpoint files from the login node. After the target checkpoint
+directory and `model/.metadata` are stable, it runs the standard strict
+eval/readout/profile/gate chain through `srun --jobid=$EXISTING_JOB_ID` inside
+an already held allocation. The active tmux watcher is:
+
+`cosmos3_v7_733_iter2100_eval_existing127350_0613`
+
+It targets the primary main-root `iter_000002100` checkpoint and existing job
+`127350`.

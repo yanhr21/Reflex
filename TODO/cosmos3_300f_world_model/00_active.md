@@ -153,12 +153,21 @@
       samples after a Cosmos chunk, but the current interface is still a
       diagnostic one-shot-chunk plus long DP takeover, not full receding
       Cosmos closed-loop evidence.
-- [ ] A read-only strict eval/readout/profile chain for the independent
+- [x] A read-only strict eval/readout/profile chain for the independent
       2-GPU shadow branch `iter_000001800` was launched on job `127350` with
       output root
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637/eval_full_episode_wam_iter_000001800`.
-      This is a branch diagnostic only and does not replace the primary
-      main-root `iter2100` gate.
+      It passed strict structure and generated-RGB readout/profile, but manual
+      visual review failed fast-shift, peg-drop, and static-monitor handoff
+      geometry. `closed_loop_allowed=false` is recorded with
+      `visual_review_status=fail`. This is a branch diagnostic only and does
+      not replace the primary main-root `iter2100` gate.
+- [x] The original `iter2100` watcher that would request a fresh `salloc` was
+      stopped by sending `Ctrl-C` to its tmux pane, not by cancelling any Slurm
+      allocation. It was replaced by tmux
+      `cosmos3_v7_733_iter2100_eval_existing127350_0613`, which only polls
+      checkpoint files on the login node and then uses the already held
+      1-H200 allocation `127350` for eval once `iter_000002100` is stable.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and
