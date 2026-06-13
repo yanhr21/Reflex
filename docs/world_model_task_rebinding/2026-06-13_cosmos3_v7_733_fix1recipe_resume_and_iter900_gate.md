@@ -637,3 +637,86 @@ an already held allocation. The active tmux watcher is:
 
 It targets the primary main-root `iter_000002100` checkpoint and existing job
 `127350`.
+
+## Iter2100 Gate, Live Smoke, And Continuation
+
+The primary 4-H200 root reached `iter_000002100` at
+`2026-06-13T09:00:05+08:00` and completed validation with validation loss
+`0.112557`. The checkpoint path is:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/outputs/cosmos3/sft/vision_sft_droid_policy_full1000_rgb_300step_wam/checkpoints/iter_000002100`
+
+The held 1-H200 eval allocation `127350` ran strict eval/readout/profile at:
+
+`experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/eval_full_episode_wam_iter_000002100`
+
+Strict structure passed:
+
+- `strict_eval_artifacts_ok=true`
+- `strict_failures=[]`
+- generated/reference videos stayed `301/301`
+- action targets stayed `300x32`
+- mean future PSNR `22.7164398514` dB
+- mean action RMSE `0.4048669528`
+- mean robot-action future RMSE `0.6779193138`
+- mean state-sidecar future RMSE `0.4098501999`
+- generated-RGB mean final hole position error `0.0687830707` m
+- mean future hole/peg/TCP RMSE `0.0420433315` / `0.0433298166` /
+  `0.0416048895` m
+- mean future peg-head-hole RMSE `0.0321321102` m
+
+The agent opened all ten review sheets directly. Manual review is recorded at:
+
+`eval_full_episode_wam_iter_000002100/manual_visual_review.json`
+
+Verdict: `pass_with_caution`, with `8` pass, `2` pass-with-caution, and `0`
+fail. The caution cases are `05_target_motion_observed_hole_late_continuous_insert`
+and `08_static_monitor_none`, both for mild live-handoff geometry offsets
+rather than visible wall insertion, peg loss, target false-motion collapse, or
+global video failure. The formal gate file:
+
+`eval_full_episode_wam_iter_000002100/closed_loop_gate_visual_review.json`
+
+records `closed_loop_allowed=true`. This only permits diagnostic live smoke; it
+is not controller success evidence.
+
+The comparable DP96 diagnostic live-smoke panel ran in allocation `127350`:
+
+`closed_loop_smoke_iter_000002100_representative_dp96_recompute_20260613_0928`
+
+It executed one `8`-step Cosmos robot-action chunk followed by `96` frozen-DP
+resume steps, recomputing the DP action chunk every `8` live steps. The panel
+completed all ten samples:
+
+- successes: samples `0`, `1`, `3`, `6`, `8`
+- failures: samples `2`, `4`, `5`, `7`, `9`
+- final simulator success: `5/10`
+
+The opened contact sheet:
+
+`closed_loop_smoke_iter_000002100_representative_dp96_recompute_20260613_0928/panel_contact_sheet_full10_dp96_start_cosmos_mid_final.png`
+
+matches the live metrics. Success rows show plausible insertion; failed rows
+remain visibly uninserted or misaligned. Therefore `iter2100` has better
+generated-video/readout metrics than earlier checkpoints, but the current
+one-shot-Cosmos-plus-long-DP diagnostic still does not prove the required
+receding world-model controller.
+
+After the `iter2100` checkpoint finished, the primary 4-H200 allocation
+`127281` was kept and the same root was resumed from `iter_000002100` toward
+`iter_000002700`. The first retry requested `64` CPUs and Slurm rejected it
+because job `127281` has `32` CPUs; it was immediately retried with
+`--cpus-per-task=32`, and step `127281.40` resumed training. The prior log was
+snapshotted before the wrapper overwrote `sft_train.log`.
+
+The two-H200 shadow allocation was also kept active. Tmux
+`cosmos3_v7_733_shadow2gpu_auto_from2100_to2700_0613` now waits for current
+shadow step `127286.27` to finish and for shadow `iter_000002100` to be
+complete, then resumes that independent shadow root from `2100 -> 2700` inside
+the same held allocation. This preserves the no-concurrent-writer rule while
+avoiding idle two-GPU resources.
+
+The next primary checkpoint gate is `iter_000002400`. Tmux
+`cosmos3_v7_733_iter2400_eval_existing127350_0613` polls checkpoint files on
+the login node and will use held allocation `127350` for strict
+eval/readout/profile once `iter_000002400` is stable.

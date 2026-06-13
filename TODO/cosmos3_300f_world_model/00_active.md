@@ -881,6 +881,46 @@
       evidence. Controller/DP integration remains gated until the new
       full-data checkpoints pass strict generated-video/action/readout and
       visual review.
+- [x] 2026-06-13 resource correction: the primary 4-H200 root reached
+      `iter_000002100`, passed strict eval/readout and direct visual review
+      as a smoke-permitted checkpoint, then was immediately resumed in the
+      same held allocation `127281` from `2100 -> 2700` with `MAX_ITER=2700`.
+      A failed first `srun` used too many CPUs for this allocation; it was
+      retried with the actual `32` CPU allotment and resumed successfully.
+      The previous log was snapshotted before the wrapper overwrote
+      `sft_train.log`.
+- [x] The spare 2-H200 allocation was not left idle: independent shadow SFT
+      `127286.27` continues in
+      `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`
+      and is watched by tmux
+      `cosmos3_v7_733_shadow2gpu_auto_from2100_to2700_0613`. That watcher only
+      polls Slurm/checkpoint files until the current shadow writer exits and
+      `iter_000002100` is complete, then resumes the same shadow root from
+      `2100 -> 2700` inside allocation `127286`.
+- [x] Primary `iter_000002100` strict eval/readout/profile completed in held
+      eval allocation `127350`. The generated artifacts passed the full
+      `301` RGB frame / `300x32` action contract with
+      `strict_failures=[]`. The gate metrics were mean future PSNR
+      `22.7164` dB, mean action RMSE `0.4049`, robot-action future RMSE
+      `0.6779`, state-sidecar future RMSE `0.4099`, generated-RGB mean final
+      hole error `0.0688` m, and future hole/peg/TCP RMSE
+      `0.0420/0.0433/0.0416` m. Manual review opened all ten sheets and
+      recorded `pass_with_caution` (`8` pass, `2` pass-with-caution, `0`
+      fail), so the closed-loop gate permits diagnostic live smoke only.
+- [x] Primary `iter_000002100` DP96 live-smoke panel completed:
+      `closed_loop_smoke_iter_000002100_representative_dp96_recompute_20260613_0928`.
+      It executed one `8`-step Cosmos robot-action chunk followed by `96`
+      recomputed frozen-DP resume steps for all ten validation samples.
+      Simulator success was `5/10` (`sample_00`, `01`, `03`, `06`, `08`);
+      failures were `sample_02`, `04`, `05`, `07`, `09`. The opened contact
+      sheet matches the metrics: failed rows remain visibly uninserted or
+      misaligned. This is not full receding-Cosmos controller evidence and not
+      a method success claim.
+- [x] A login-side watcher for primary `iter_000002400` eval is now active in
+      tmux `cosmos3_v7_733_iter2400_eval_existing127350_0613`. It only polls
+      checkpoint files on the login node and will use existing allocation
+      `127350` for strict eval/readout/profile once `iter_000002400` is
+      stable.
 - [ ] Future closed-loop work must follow
       `TODO/cosmos3_300f_world_model/08_receding_closed_loop.md`: no one-shot
       300-step open-loop Cosmos execution, no sidecar/oracle simulator state,

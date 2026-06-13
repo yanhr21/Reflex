@@ -52,11 +52,24 @@
       Independent shadow job `127286` on `server40` writes only its separate
       2-GPU root and was observed around iteration `1774` with both GPUs at
       `100%` utilization.
-- [ ] Next completed checkpoint to review is `iter_000002100` from the primary
-      main root or, if the primary fails, the independent 2-GPU shadow root.
-      No controller/DP success claim may be made until a future gate passes
-      strict artifacts, generated-RGB readout/profile, explicit visual review,
-      and live simulator/video evidence.
+- [x] Primary main-root `iter_000002100` review completed. Strict generated
+      artifacts/readout/profile passed with the full `301` RGB frame and
+      `300x32` action contract. Manual review opened all ten sheets and
+      recorded `pass_with_caution`; the formal gate allowed diagnostic live
+      smoke only. The `8 + 96` live-smoke panel then reached simulator
+      success on `5/10` samples, with the contact sheet matching metrics.
+      This is not controller success evidence and not a full receding-Cosmos
+      method result.
+- [ ] Next completed checkpoint to review is primary main-root
+      `iter_000002400`. Tmux
+      `cosmos3_v7_733_iter2400_eval_existing127350_0613` is polling on the
+      login node and will use held eval allocation `127350` once the
+      checkpoint is stable. Primary job `127281.40` continues toward
+      `iter_000002700`; independent shadow job `127286.33` has also resumed
+      from `2100 -> 2700` in its separate 2-GPU root. No controller/DP success
+      claim may be made until a future gate passes strict artifacts,
+      generated-RGB readout/profile, explicit visual review, and live
+      simulator/video evidence.
 - [x] The independent 2-GPU shadow branch `iter_000001800` was evaluated as a
       read-only branch diagnostic on held job `127350`. Strict artifacts and
       generated-RGB readout/profile passed structurally, but manual visual
@@ -98,7 +111,10 @@
 
 ## Still Not Started
 
-- [ ] No controller or DP integration has been launched.
+- [ ] No method-level controller/DP integration has been launched. Guarded
+      diagnostic live-smoke panels have run for `iter1800` and `iter2100`,
+      but they use one precomputed Cosmos action chunk followed by a long
+      frozen-DP resume and are not full receding-Cosmos controller evidence.
 - [ ] No controller or DP integration may be launched from the latest
       fix1-recipe `iter_000000300`. That checkpoint passed length/action
       artifact checks and is the best current qualitative sanity checkpoint,

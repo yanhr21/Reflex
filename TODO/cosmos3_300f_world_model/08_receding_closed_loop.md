@@ -51,6 +51,26 @@
       after long DP resume, but this is still not full receding-Cosmos method
       evidence: it uses one precomputed Cosmos action chunk followed by a long
       DP takeover and does not re-run Cosmos after each live observation.
+- [x] `iter_000002100` completed the full generated-artifact/readout/profile
+      gate and direct visual review. The ten review sheets were opened
+      directly; verdict was `pass_with_caution` (`8` pass, `2`
+      pass-with-caution, `0` fail), and
+      `closed_loop_gate_visual_review.json` records
+      `closed_loop_allowed=true`. This gate only permits live smoke; it is
+      not controller success evidence.
+- [x] Run the comparable `iter2100` diagnostic live-smoke panel with `8`
+      Cosmos action steps plus `96` recomputed frozen-DP resume steps:
+      `closed_loop_smoke_iter_000002100_representative_dp96_recompute_20260613_0928`.
+      The panel completed for all ten samples and reached final simulator
+      success on `5/10` samples. Successes were samples `0`, `1`, `3`, `6`,
+      and `8`; failures were `2`, `4`, `5`, `7`, and `9`. The inspected
+      contact sheet
+      `panel_contact_sheet_full10_dp96_start_cosmos_mid_final.png` agrees
+      with the live metrics: success rows show plausible final insertion, and
+      failed rows remain visibly outside or misaligned with the hole. This is
+      controller-negative relative to the required method because it still
+      uses one precomputed Cosmos chunk followed by long DP takeover and does
+      not improve over the previous `iter1800` DP96 diagnostic.
 - [x] The old 2-H200 fallback/watch logic is no longer the active path for
       `iter_000001500`; the 4-H200 auto-resume-after-checkpoint watcher
       launched the current `1500 -> 2100` continuation without concurrent
@@ -220,16 +240,24 @@
 - [ ] Run a tiny compute-node smoke first. It passes only if length accounting,
       action de-normalization, live `env.step`, video recording, and final
       metrics all complete without using sidecar/oracle state.
-      Current compute-node smoke covered the preflight and gate path only; live
-      `env.step` remains blocked by the failed checkpoint gate.
+      Current compute-node smoke has progressed past the gate on `iter1800`
+      and `iter2100`: live `env.step`, short Cosmos action execution,
+      repeated DP resume, video recording, and final simulator metrics all
+      run. The result is still diagnostic and controller-negative because the
+      interface is one precomputed Cosmos chunk plus long DP takeover, not a
+      full receding world-model controller.
 - [ ] Only after the smoke passes, run the fixed scenario-diverse validation
       panel from the testing plan: static/none, pre-motion target forecast,
       observed target motion, move-stop, reverse, peg disturbance, and
       peg-drop/regrasp.
-- [ ] Next gate target is the continued SFT checkpoint `iter_000002100`.
-      Main 4-H200 job `127281` and independent 2-H200 shadow job `127286` are
-      both running; evaluate whichever checkpoint is complete and visually
-      strongest without starting concurrent writers into the same root.
+- [ ] Next gate target is the continued primary SFT checkpoint
+      `iter_000002400`. Tmux
+      `cosmos3_v7_733_iter2400_eval_existing127350_0613` polls on the login
+      node and will use held eval allocation `127350` for strict eval/readout
+      once the checkpoint is stable. Primary 4-H200 SFT `127281.40` continues
+      from `2100 -> 2700`; independent 2-H200 shadow continuation `127286`
+      is watched so it can also resume from `2100 -> 2700` without leaving
+      the two cards idle.
 
 ## Negative Cases To Preserve
 
