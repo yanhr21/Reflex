@@ -137,6 +137,12 @@
       was observed at iteration `1774`, and both GPUs were at `100%`
       utilization. The one-GPU eval allocation `127350` was used for live
       smoke diagnostics and must not be counted as SFT training.
+- [x] A lightweight login-side request watcher was started in tmux
+      `cosmos3_v7_733_iter2100_eval_request_on_ckpt_0613` for the next main
+      checkpoint. It only polls checkpoint files on the login node and will
+      request a fresh 1-H200 eval allocation after `iter_000002100` is stable.
+      Its first poll at `2026-06-13T08:03:32+08:00` reported
+      `latest=iter_000001500`, `has_target_dir=no`, `has_model_metadata=no`.
 - [x] Iter300 strict eval/readout/profile completed in auxiliary allocation
       `127120` on `server40`. Structural gates passed for `10` samples:
       generated/reference videos are `301/301`, actions are `300x32`, and
