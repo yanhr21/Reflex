@@ -9,6 +9,7 @@ or 129-frame clip.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
@@ -90,6 +91,8 @@ class Args:
     temporal_compression_factor: int = 4
     action_condition_mode: str = "joint_policy_history_action"
     sidecar_target_mode: str = "future_aligned_state"
+    prefix_role_source: str = "sampled"
+    dense_receding_prefix_stride: int = 0
     require_video_frames: int = 301
     max_records: int = 0
     normalize: bool = True
@@ -444,11 +447,22 @@ def _prefix_specs(summary: dict[str, Any], args: Args) -> list[dict[str, Any]]:
 
     specs: list[dict[str, Any]] = []
 
-    def add(role: str, frame: int, reason: str) -> None:
+    def add(role: str, frame: int, reason: str, sampled_prefix_role: str | None = None) -> None:
         safe = _safe_prefix_frame(frame, args)
-        key = (role, safe)
-        if key not in {(item["role"], item["prefix_frame_index"]) for item in specs}:
-            specs.append({"role": role, "prefix_frame_index": safe, "reason": reason})
+        sampled = sampled_prefix_role or role
+        key = (role, safe, sampled)
+        if key not in {
+            (item["role"], item["prefix_frame_index"], item.get("sampled_prefix_role", item["role"]))
+            for item in specs
+        }:
+            specs.append(
+                {
+                    "role": role,
+                    "prefix_frame_index": safe,
+                    "sampled_prefix_role": sampled,
+                    "reason": reason,
+                }
+            )
 
     base = args.fixed_prefix_frames - 1
     onset = int(summary["target_onset_frame"])
@@ -475,16 +489,49 @@ def _prefix_specs(summary: dict[str, Any], args: Args) -> list[dict[str, Any]]:
     if first_grasp >= 0:
         add("insert_resume", first_grasp + 40, "peg is likely held; predict insertion resume")
 
+    stride = int(args.dense_receding_prefix_stride)
+    if stride > 0 and onset >= 0:
+        end = int(summary["first_inserted_frame"])
+        if end < 0:
+            end = int(args.total_video_frames) - 2
+        start = _safe_prefix_frame(onset + 1, args)
+        stop = _safe_prefix_frame(end, args)
+        for frame in range(start, stop + 1, stride):
+            physical_role = str(summary["frame_labels"][frame]["mode"])
+            add(
+                physical_role,
+                frame,
+                f"dense receding physical-mode prefix every {stride} frames after target onset",
+                sampled_prefix_role="dense_receding",
+            )
+
     specs = sorted(specs, key=lambda item: (item["prefix_frame_index"], item["role"]))
     return specs
 
 
-def _prefix_payload(arrays: dict[str, Any], summary: dict[str, Any], prefix_frame: int, role: str) -> dict[str, Any]:
+def _controller_role_for_spec(spec: dict[str, Any], label: dict[str, Any], args: Args) -> str:
+    if args.prefix_role_source == "sampled":
+        return str(spec["role"])
+    if args.prefix_role_source == "physical_mode":
+        return str(label["mode"])
+    raise ValueError("prefix_role_source must be sampled or physical_mode")
+
+
+def _prefix_payload(
+    arrays: dict[str, Any],
+    summary: dict[str, Any],
+    prefix_frame: int,
+    role: str,
+    sampled_prefix_role: str,
+    prefix_role_source: str,
+) -> dict[str, Any]:
     label = summary["frame_labels"][prefix_frame]
     return {
         "prefix_frame_index": int(prefix_frame),
         "condition_prefix_frames": int(prefix_frame + 1),
         "prefix_role": role,
+        "sampled_prefix_role": sampled_prefix_role,
+        "prefix_role_source": prefix_role_source,
         "mode": label["mode"],
         "mode_id": int(label["mode_id"]),
         "target_motion_observed": bool(label["target_started"]),
@@ -538,6 +585,10 @@ def main() -> None:
         raise ValueError("active contract requires require_video_frames=301")
     if args.action_condition_mode not in {"joint_policy_history_action", "forward_dynamics"}:
         raise ValueError("action_condition_mode must be joint_policy_history_action or forward_dynamics")
+    if args.prefix_role_source not in {"sampled", "physical_mode"}:
+        raise ValueError("prefix_role_source must be sampled or physical_mode")
+    if int(args.dense_receding_prefix_stride) < 0:
+        raise ValueError("dense_receding_prefix_stride must be >= 0")
     vector_names = _vector_names_for_mode(args.sidecar_target_mode)
 
     dataset_root = Path(args.dataset_root)
@@ -588,10 +639,20 @@ def main() -> None:
             _progress(f"full_episode_export_planned {index}/{len(videos)} sample_id={item['sample_id']} prefixes={len(specs)}")
 
     stats = _zscore_stats(raw_rows_for_stats) if args.normalize else None
+    if stats is not None:
+        # The helper is shared with the older prefix-repeated exporter, whose
+        # vector names use prefix_* labels. Full-episode WAM rows use task_*
+        # names in the same column order, so keep the statistics but publish
+        # the correct names for downstream diagnostics and sidecar readout.
+        stats["vector_names"] = vector_names
+        stats["raw_action_dim"] = len(vector_names)
     records_by_split: dict[str, list[dict[str, Any]]] = {"train": [], "val": []}
     condition_rows_by_split: dict[str, list[dict[str, Any]]] = {"train": [], "val": []}
     written_state_targets: dict[str, Path] = {}
     written_summary_labels: dict[str, Path] = {}
+    row_uuid_seen: Counter[str] = Counter()
+    role_mode_counts: dict[str, int] = {}
+    sampled_role_counts: dict[str, int] = {}
 
     for row_index, plan in enumerate(planned, start=1):
         item = plan["item"]
@@ -603,10 +664,27 @@ def main() -> None:
         prefix_frame = int(spec["prefix_frame_index"])
         prefix_frames = prefix_frame + 1
         condition_frame_indexes_vision = _prefix_latent_indexes(prefix_frames, args.temporal_compression_factor)
-        role = str(spec["role"])
-        row_uuid = f"{sample_id}__{role}_f{prefix_frame:03d}"
+        label = summary["frame_labels"][prefix_frame]
+        role = _controller_role_for_spec(spec, label, args)
+        sampled_prefix_role = str(spec.get("sampled_prefix_role", spec["role"]))
+        row_uuid_base = f"{sample_id}__{role}_f{prefix_frame:03d}"
+        row_uuid_seen[row_uuid_base] += 1
+        if row_uuid_seen[row_uuid_base] == 1:
+            row_uuid = row_uuid_base
+        else:
+            row_uuid = f"{row_uuid_base}__sampled_{sampled_prefix_role}_{row_uuid_seen[row_uuid_base]}"
         arrays = arrays_by_sample[sample_id]
-        payload = _prefix_payload(arrays, summary, prefix_frame, role)
+        payload = _prefix_payload(
+            arrays,
+            summary,
+            prefix_frame,
+            role,
+            sampled_prefix_role,
+            args.prefix_role_source,
+        )
+        role_mode_key = f"{role}|{payload['mode']}"
+        role_mode_counts[role_mode_key] = role_mode_counts.get(role_mode_key, 0) + 1
+        sampled_role_counts[sampled_prefix_role] = sampled_role_counts.get(sampled_prefix_role, 0) + 1
 
         action = _apply_stats(raw, stats) if stats is not None else raw
         action_rel = Path("actions") / split / f"{row_index:05d}_{row_uuid}.npy"
@@ -672,6 +750,7 @@ def main() -> None:
                     "uuid": row_uuid,
                     "prefix": payload,
                     "summary_path": str(summary_path),
+                    "sampled_prefix_role": sampled_prefix_role,
                     "prefix_reason": spec["reason"],
                     "label_boundary": (
                         "Future labels supervise/read out the world model. They must not be "
@@ -709,6 +788,9 @@ def main() -> None:
                 "condition_prefix_frames": prefix_frames,
                 "prefix_frame_index": prefix_frame,
                 "prefix_role": role,
+                "sampled_prefix_role": sampled_prefix_role,
+                "physical_mode": payload["mode"],
+                "prefix_role_source": args.prefix_role_source,
                 "target_object": "hole",
                 "tool_object": "peg",
                 "actor": "robot_gripper_tcp",
@@ -742,6 +824,9 @@ def main() -> None:
                         "goal": "insert peg into target hole",
                     },
                     "prefix_causal_state": payload,
+                    "sampled_prefix_role": sampled_prefix_role,
+                    "physical_mode": payload["mode"],
+                    "prefix_role_source": args.prefix_role_source,
                     "supervision_available": {
                         "target_onset_frame": summary["target_onset_frame"],
                         "target_final_xyz": summary["target_final_xyz"],
@@ -789,6 +874,9 @@ def main() -> None:
             "condition_prefix_frames": prefix_frames,
             "prefix_frame_index": prefix_frame,
             "prefix_role": role,
+            "sampled_prefix_role": sampled_prefix_role,
+            "physical_mode": payload["mode"],
+            "prefix_role_source": args.prefix_role_source,
             "target_object": "hole",
             "tool_object": "peg",
             "actor": "robot_gripper_tcp",
@@ -827,6 +915,13 @@ def main() -> None:
         "sidecar_target_mode": args.sidecar_target_mode,
         "state_target_vector_names": STATE_TARGET_VECTOR_NAMES,
         "mode_ids": MODE_IDS,
+        "prefix_role_source": args.prefix_role_source,
+        "dense_receding_prefix_stride": args.dense_receding_prefix_stride,
+        "sampled_prefix_role_counts": dict(sorted(sampled_role_counts.items())),
+        "prefix_role_mode_counts": dict(sorted(role_mode_counts.items())),
+        "prefix_role_mode_mismatch_count": int(
+            sum(count for key, count in role_mode_counts.items() if key.split("|", 1)[0] != key.split("|", 1)[1])
+        ),
         "normalization": "zscore" if stats is not None else "none",
         "visual_input": "RGB only; depth is not used",
         "contract": (

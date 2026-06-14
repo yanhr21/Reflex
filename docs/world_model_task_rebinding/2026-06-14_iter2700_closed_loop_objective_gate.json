@@ -1,0 +1,911 @@
+{
+  "boundary": "Read-only objective gate. Passing the implementation contract means the closed-loop artifacts satisfy the user's full-length/causal/annotation/comparison requirements. It does not mean the method is effective unless method_effectiveness_ok is also true.",
+  "contract_failures": [],
+  "hard_action_rebind_analysis": {
+    "cosmos_final_success_count": 1,
+    "pure_dp_final_success_count_on_matched": 0,
+    "sample_count": 6,
+    "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/docs/world_model_task_rebinding/2026-06-14_iter2700_hard_screen2_action_rebind_analysis.json"
+  },
+  "hard_case_success_fraction": 0.16666666666666666,
+  "hard_cosmos_on_pure_dp_failures": {
+    "completed_samples": 6,
+    "final_success_count": 1,
+    "samples": [
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_04_hole_late_fast_shift/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 158,
+          "DP_SCAN_TARGET": 86,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 56
+        },
+        "detected_frame_index": 86,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": true,
+        "first_streak_frame_index": 85,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_04_hole_late_fast_shift/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 4,
+        "scenario": "hole_late_fast_shift",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_04_hole_late_fast_shift/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 158,
+            "DP_SCAN_TARGET": 86,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 56
+          },
+          "annotated_target_motion_detected_frames": 215,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 158,
+            "DP_SCAN_TARGET": 86,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 56
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 56,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 158,
+            "DP_SCAN_TARGET": 86,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 56
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 158,
+            "DP_SCAN_TARGET": 86,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 56
+          }
+        },
+        "wm_active_frames": 56
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_09_hole_late_sine/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 8,
+          "DP_SCAN_TARGET": 80,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 212
+        },
+        "detected_frame_index": 80,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 79,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_09_hole_late_sine/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 9,
+        "scenario": "hole_late_sine",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_09_hole_late_sine/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 80,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 212
+          },
+          "annotated_target_motion_detected_frames": 221,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 80,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 212
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 212,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 80,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 212
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 80,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 212
+          }
+        },
+        "wm_active_frames": 212
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_10_hole_late_sine/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_SCAN_TARGET": 96,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 204
+        },
+        "detected_frame_index": 96,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 95,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_10_hole_late_sine/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 10,
+        "scenario": "hole_late_sine",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_10_hole_late_sine/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_SCAN_TARGET": 96,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 204
+          },
+          "annotated_target_motion_detected_frames": 205,
+          "annotated_timeline_counts": {
+            "DP_SCAN_TARGET": 96,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 204
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 204,
+          "controller_timeline_counts": {
+            "DP_SCAN_TARGET": 96,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 204
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_SCAN_TARGET": 96,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 204
+          }
+        },
+        "wm_active_frames": 204
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_11_hole_late_continuous_insert/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_SCAN_TARGET": 98,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 202
+        },
+        "detected_frame_index": 98,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 97,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_11_hole_late_continuous_insert/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 11,
+        "scenario": "hole_late_continuous_insert",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_11_hole_late_continuous_insert/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_SCAN_TARGET": 98,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 202
+          },
+          "annotated_target_motion_detected_frames": 203,
+          "annotated_timeline_counts": {
+            "DP_SCAN_TARGET": 98,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 202
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 202,
+          "controller_timeline_counts": {
+            "DP_SCAN_TARGET": 98,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 202
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_SCAN_TARGET": 98,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 202
+          }
+        },
+        "wm_active_frames": 202
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_12_hole_late_move_stop/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 24,
+          "DP_SCAN_TARGET": 87,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 189
+        },
+        "detected_frame_index": 87,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 86,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_12_hole_late_move_stop/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 12,
+        "scenario": "hole_late_move_stop",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_12_hole_late_move_stop/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 24,
+            "DP_SCAN_TARGET": 87,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 189
+          },
+          "annotated_target_motion_detected_frames": 214,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 24,
+            "DP_SCAN_TARGET": 87,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 189
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 189,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 24,
+            "DP_SCAN_TARGET": 87,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 189
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 24,
+            "DP_SCAN_TARGET": 87,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 189
+          }
+        },
+        "wm_active_frames": 189
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_13_hole_late_fast_shift/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 8,
+          "DP_SCAN_TARGET": 72,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 220
+        },
+        "detected_frame_index": 72,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 71,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_13_hole_late_fast_shift/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 13,
+        "scenario": "hole_late_fast_shift",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/sample_13_hole_late_fast_shift/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 72,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 220
+          },
+          "annotated_target_motion_detected_frames": 229,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 72,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 220
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 220,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 72,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 220
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 8,
+            "DP_SCAN_TARGET": 72,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 220
+          }
+        },
+        "wm_active_frames": 220
+      }
+    ],
+    "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13/live_receding_panel_summary.json"
+  },
+  "implementation_contract_ok": true,
+  "method_effectiveness_failures": [
+    "val_cosmos_underperforms_same_source_pure_dp:1/3<pure_dp:3/3",
+    "hard_case_success_fraction_below_minimum:1/6<min_fraction:0.5",
+    "hard_case_not_broadly_reliable:1/6"
+  ],
+  "method_effectiveness_ok": false,
+  "min_hard_case_success_fraction": 0.5,
+  "min_moving_wm_active_frames": 8,
+  "next_action_verdict": "do_not_continue_old_checkpoint_as_broad_method_evidence; proceed_to_clean_dense_repair_preflight_when_user_approved",
+  "static_no_motion": {
+    "annotated_video_inspection": {
+      "decoded_frame_count": 301,
+      "decoder": "imageio",
+      "decoder_errors": [],
+      "duration_seconds": 10.033333333333333,
+      "error": null,
+      "exists": true,
+      "fps": 30.0,
+      "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_static_none_fix1_20260613_alloc127559/live_observed_rollout_annotated.mp4",
+      "scan_enabled": true,
+      "scanned_frame_count": 301
+    },
+    "controller_frame_counts": {
+      "DP_SCAN_TARGET": 300,
+      "INIT_OBS": 1
+    },
+    "detected_frame_index": null,
+    "dp_active_frame_count": 300,
+    "failures": [],
+    "final_success": false,
+    "ok": true,
+    "prefix_selection_mode": "target_motion_detector_never_triggered_after_terminal_completion",
+    "prefix_selection_triggered": false,
+    "pretrigger_control_mode": "frozen_dp_until_target_motion",
+    "raw_video_inspection": {
+      "decoded_frame_count": 301,
+      "decoder": "imageio",
+      "decoder_errors": [],
+      "duration_seconds": 10.033333333333333,
+      "error": null,
+      "exists": true,
+      "fps": 30.0,
+      "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_static_none_fix1_20260613_alloc127559/live_observed_rollout.mp4",
+      "scan_enabled": true,
+      "scanned_frame_count": 301
+    },
+    "scenario": "none",
+    "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_static_none_fix1_20260613_alloc127559/live_receding_loop_summary.json",
+    "timeline_report": {
+      "annotated_summary_controller_count_sum": 301,
+      "annotated_summary_controller_counts": {
+        "DP_SCAN_TARGET": 300,
+        "INIT_OBS": 1
+      },
+      "annotated_target_motion_detected_frames": 0,
+      "annotated_timeline_counts": {
+        "DP_SCAN_TARGET": 300,
+        "INIT_OBS": 1
+      },
+      "annotated_timeline_length": 301,
+      "annotated_wm_active_frames": 0,
+      "controller_timeline_counts": {
+        "DP_SCAN_TARGET": 300,
+        "INIT_OBS": 1
+      },
+      "controller_timeline_length": 301,
+      "expected_controller_count_sum": 301,
+      "expected_controller_counts": {
+        "DP_SCAN_TARGET": 300,
+        "INIT_OBS": 1
+      }
+    },
+    "wm_active_frame_count": 0
+  },
+  "val_cosmos": {
+    "completed_samples": 3,
+    "final_success_count": 1,
+    "samples": [
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_01_hole_late_constant/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_SCAN_TARGET": 94,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 206
+        },
+        "detected_frame_index": 94,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 93,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_01_hole_late_constant/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 1,
+        "scenario": "hole_late_constant",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_01_hole_late_constant/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_SCAN_TARGET": 94,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 206
+          },
+          "annotated_target_motion_detected_frames": 207,
+          "annotated_timeline_counts": {
+            "DP_SCAN_TARGET": 94,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 206
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 206,
+          "controller_timeline_counts": {
+            "DP_SCAN_TARGET": 94,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 206
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_SCAN_TARGET": 94,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 206
+          }
+        },
+        "wm_active_frames": 206
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_02_hole_late_reverse/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 156,
+          "DP_SCAN_TARGET": 104,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 40
+        },
+        "detected_frame_index": 104,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": true,
+        "first_streak_frame_index": 103,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_02_hole_late_reverse/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 2,
+        "scenario": "hole_late_reverse",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_02_hole_late_reverse/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 156,
+            "DP_SCAN_TARGET": 104,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 40
+          },
+          "annotated_target_motion_detected_frames": 197,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 156,
+            "DP_SCAN_TARGET": 104,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 40
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 40,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 156,
+            "DP_SCAN_TARGET": 104,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 40
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 156,
+            "DP_SCAN_TARGET": 104,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 40
+          }
+        },
+        "wm_active_frames": 40
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_03_hole_late_fast_shift/live_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "DP_HANDOFF": 136,
+          "DP_SCAN_TARGET": 132,
+          "INIT_OBS": 1,
+          "WM_ACTIVE": 32
+        },
+        "detected_frame_index": 132,
+        "failures": [],
+        "final_observed_frames": 301,
+        "final_prefix_frame_index": 300,
+        "final_success": false,
+        "first_streak_frame_index": 131,
+        "full_episode_length_ok": true,
+        "ok": true,
+        "prefix_selection_mode": "target_motion_onset",
+        "prefix_selection_triggered": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_03_hole_late_fast_shift/live_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 3,
+        "scenario": "hole_late_fast_shift",
+        "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/sample_03_hole_late_fast_shift/live_receding_loop_summary.json",
+        "timeline_report": {
+          "annotated_summary_controller_count_sum": 301,
+          "annotated_summary_controller_counts": {
+            "DP_HANDOFF": 136,
+            "DP_SCAN_TARGET": 132,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 32
+          },
+          "annotated_target_motion_detected_frames": 169,
+          "annotated_timeline_counts": {
+            "DP_HANDOFF": 136,
+            "DP_SCAN_TARGET": 132,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 32
+          },
+          "annotated_timeline_length": 301,
+          "annotated_wm_active_frames": 32,
+          "controller_timeline_counts": {
+            "DP_HANDOFF": 136,
+            "DP_SCAN_TARGET": 132,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 32
+          },
+          "controller_timeline_length": 301,
+          "expected_controller_count_sum": 301,
+          "expected_controller_counts": {
+            "DP_HANDOFF": 136,
+            "DP_SCAN_TARGET": 132,
+            "INIT_OBS": 1,
+            "WM_ACTIVE": 32
+          }
+        },
+        "wm_active_frames": 32
+      }
+    ],
+    "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559/live_receding_panel_summary.json"
+  },
+  "val_pure_dp": {
+    "final_success_count": 3,
+    "ok": true,
+    "sample_count": 3,
+    "samples": [
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_01_hole_late_constant/pure_dp_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "INIT_OBS": 1,
+          "PURE_DP": 300
+        },
+        "failures": [],
+        "final_success": true,
+        "ok": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_01_hole_late_constant/pure_dp_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 1,
+        "scenario": "hole_late_constant"
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_02_hole_late_reverse/pure_dp_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "INIT_OBS": 1,
+          "PURE_DP": 300
+        },
+        "failures": [],
+        "final_success": true,
+        "ok": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_02_hole_late_reverse/pure_dp_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 2,
+        "scenario": "hole_late_reverse"
+      },
+      {
+        "annotated_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_03_hole_late_fast_shift/pure_dp_observed_rollout_annotated.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "controller_frame_counts": {
+          "INIT_OBS": 1,
+          "PURE_DP": 300
+        },
+        "failures": [],
+        "final_success": true,
+        "ok": true,
+        "raw_video_inspection": {
+          "decoded_frame_count": 301,
+          "decoder": "imageio",
+          "decoder_errors": [],
+          "duration_seconds": 10.033333333333333,
+          "error": null,
+          "exists": true,
+          "fps": 30.0,
+          "path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/sample_03_hole_late_fast_shift/pure_dp_observed_rollout.mp4",
+          "scan_enabled": true,
+          "scanned_frame_count": 301
+        },
+        "sample_index": 3,
+        "scenario": "hole_late_fast_shift"
+      }
+    ],
+    "summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559/pure_dp_panel_summary.json"
+  },
+  "video_scan_enabled": true,
+  "video_scan_rollup": {
+    "all_scanned_videos_have_301_frames": true,
+    "max_duration_seconds": 10.033333333333333,
+    "max_scanned_frame_count": 301,
+    "min_duration_seconds": 10.033333333333333,
+    "min_scanned_frame_count": 301,
+    "scan_error_count": 0,
+    "scanned_video_file_count": 26,
+    "video_file_count": 26
+  }
+}

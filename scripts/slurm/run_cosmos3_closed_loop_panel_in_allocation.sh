@@ -30,22 +30,34 @@ EVAL_ROOT="${EVAL_ROOT:-${SFT_ROOT}/eval_full_episode_wam_${CHECKPOINT_NAME}}"
 CONDITION_ROOT="${CONDITION_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/full_episode_wam_conditions_fix3_v7_733_rgb_300step_20260612_0245}"
 DP_CHECKPOINT="${DP_CHECKPOINT:-${ROOT}/experiments/dp_peg1000/run_90201/checkpoints/best_eval_success_at_end.pt}"
 DP_MANIFEST="${DP_MANIFEST:-${ROOT}/experiments/dp_peg1000/run_90201/manifest.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${SFT_ROOT}/closed_loop_smoke_${CHECKPOINT_NAME}_panel${N_SAMPLES:-10}_dp${DP_RESUME_HORIZON:-96}_recompute_${STAMP}}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${SFT_ROOT}/closed_loop_smoke_${CHECKPOINT_NAME}_panel${N_SAMPLES:-10}_dp${DP_RESUME_HORIZON:-8}_recompute_${STAMP}}"
 READOUT_SUBDIR="${READOUT_SUBDIR:-task_state_readout_v7_733}"
-VISUAL_REVIEW_STATUS="${VISUAL_REVIEW_STATUS:-pass}"
-VISUAL_REVIEW_NOTE="${VISUAL_REVIEW_NOTE:-panel_run_requires_prior_manual_visual_gate}"
+VISUAL_REVIEW_STATUS="${VISUAL_REVIEW_STATUS:-missing}"
+VISUAL_REVIEW_NOTE="${VISUAL_REVIEW_NOTE:-panel_run_requires_explicit_prior_manual_visual_gate}"
 N_SAMPLES="${N_SAMPLES:-10}"
 SAMPLE_INDICES="${SAMPLE_INDICES:-}"
 ACTION_EXEC_HORIZON="${ACTION_EXEC_HORIZON:-8}"
-DP_RESUME_HORIZON="${DP_RESUME_HORIZON:-96}"
+DP_RESUME_HORIZON="${DP_RESUME_HORIZON:-8}"
 CAPTURE_LIVE_VIDEO="${CAPTURE_LIVE_VIDEO:-true}"
 LIVE_VIDEO_FPS="${LIVE_VIDEO_FPS:-10}"
 CLIP_LIVE_ACTIONS="${CLIP_LIVE_ACTIONS:-true}"
+ALLOW_LONG_DP_DIAGNOSTIC="${ALLOW_LONG_DP_DIAGNOSTIC:-false}"
+ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC="${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC:-false}"
 EXPECTED_VIDEO_FRAMES="${EXPECTED_VIDEO_FRAMES:-301}"
 EXPECTED_ACTION_STEPS="${EXPECTED_ACTION_STEPS:-300}"
 EXPECTED_ACTION_DIM="${EXPECTED_ACTION_DIM:-32}"
 ROBOT_ACTION_DIM="${ROBOT_ACTION_DIM:-7}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-300}"
+
+if [[ "${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC}" != "true" ]]; then
+  cat >&2 <<'EOF'
+refusing_old_oneshot_closed_loop_panel=true
+reason=This wrapper runs the old one-shot Cosmos chunk plus optional DP resume diagnostic, not the corrected full-300 live-receding method.
+override_for_non_method_diagnostic=ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC=true
+required_method_wrapper=scripts/slurm/run_cosmos3_live_receding_panel_in_allocation.sh
+EOF
+  exit 43
+fi
 
 sample_indices() {
   if [[ -n "${SAMPLE_INDICES}" ]]; then
@@ -76,11 +88,32 @@ mkdir -p "${OUTPUT_ROOT}"
   echo "sample_indices=${SAMPLE_INDICES:-0..$((N_SAMPLES - 1))}"
   echo "action_exec_horizon=${ACTION_EXEC_HORIZON}"
   echo "dp_resume_horizon=${DP_RESUME_HORIZON}"
+  echo "allow_long_dp_diagnostic=${ALLOW_LONG_DP_DIAGNOSTIC}"
+  echo "allow_old_oneshot_closed_loop_diagnostic=${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC}"
   echo "capture_live_video=${CAPTURE_LIVE_VIDEO}"
   echo "live_video_fps=${LIVE_VIDEO_FPS}"
   echo "clip_live_actions=${CLIP_LIVE_ACTIONS}"
-  echo "boundary=gated diagnostic live smoke panel; not full receding-Cosmos controller success evidence"
+  echo "boundary=gated diagnostic one-shot live smoke panel; not full receding-Cosmos controller success evidence"
 } | tee "${OUTPUT_ROOT}/panel_manifest.txt"
+
+if [[ "${VISUAL_REVIEW_STATUS}" != "pass" ]]; then
+  cat >&2 <<EOF
+closed_loop_panel_refused=true
+reason=VISUAL_REVIEW_STATUS must be explicitly set to pass after manual review.
+visual_review_status=${VISUAL_REVIEW_STATUS}
+EOF
+  exit 41
+fi
+
+if (( DP_RESUME_HORIZON > ACTION_EXEC_HORIZON )) && [[ "${ALLOW_LONG_DP_DIAGNOSTIC}" != "true" ]]; then
+  cat >&2 <<EOF
+closed_loop_panel_refused=true
+reason=Long frozen-DP takeover requires ALLOW_LONG_DP_DIAGNOSTIC=true and remains non-method diagnostic evidence.
+action_exec_horizon=${ACTION_EXEC_HORIZON}
+dp_resume_horizon=${DP_RESUME_HORIZON}
+EOF
+  exit 42
+fi
 
 cd "${ROOT}"
 failed=0
@@ -108,6 +141,8 @@ for sample_index in $(sample_indices); do
     ACTION_PREVIEW_SAMPLE_INDEX="${sample_index}" \
     ACTION_EXEC_HORIZON="${ACTION_EXEC_HORIZON}" \
     DP_RESUME_HORIZON="${DP_RESUME_HORIZON}" \
+    ALLOW_LONG_DP_DIAGNOSTIC="${ALLOW_LONG_DP_DIAGNOSTIC}" \
+    ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC="${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC}" \
     CAPTURE_LIVE_VIDEO="${CAPTURE_LIVE_VIDEO}" \
     LIVE_VIDEO_FPS="${LIVE_VIDEO_FPS}" \
     CLIP_LIVE_ACTIONS="${CLIP_LIVE_ACTIONS}" \

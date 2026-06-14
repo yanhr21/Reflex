@@ -21,6 +21,34 @@ export MAX_VAL_ITER="${MAX_VAL_ITER:-2}"
 export MASTER_PORT="${MASTER_PORT:-50353}"
 export FORCE_EXPORT="${FORCE_EXPORT:-false}"
 export RUN_SFT="${RUN_SFT:-true}"
+export ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC="${ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC:-false}"
+
+if [[ "${DRY_RUN_CONFIG_ONLY:-false}" == "true" ]]; then
+  cat <<EOF
+dry_run_config_only=true
+source_dataset_root=${SOURCE_DATASET_ROOT}
+condition_root=${CONDITION_ROOT}
+output_root=${OUTPUT_ROOT}
+expected_source_episodes=${EXPECTED_SOURCE_EPISODES}
+run_sft=${RUN_SFT}
+allow_legacy_v7_733_overfit2_sft_diagnostic=${ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC}
+would_refuse_legacy_training=$([[ "${RUN_SFT}" == "true" && "${ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC}" != "true" ]] && echo true || echo false)
+replacement=scripts/slurm/run_cosmos3_300f_full_episode_wam_fix3_v7_733_clean_dense_overfit2_preflight_in_allocation.sh
+boundary=configuration-only dry run; no export, training, rendering, or eval is launched.
+EOF
+  exit 0
+fi
+
+if [[ "${RUN_SFT}" == "true" && "${ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC}" != "true" ]]; then
+  cat >&2 <<'EOF'
+refusing_legacy_v7_733_overfit2_sft=true
+reason=The old sampled-role overfit2 chain is historical. Use the clean/dense overfit2 preflight and guarded overfit SFT entry for active repair.
+use_preflight=scripts/slurm/run_cosmos3_300f_full_episode_wam_fix3_v7_733_clean_dense_overfit2_preflight_in_allocation.sh
+use_sft=scripts/slurm/run_cosmos3_300f_full_episode_wam_fix3_v7_733_clean_dense_overfit2_fix1recipe_in_allocation.sh
+override_for_non_method_diagnostic=ALLOW_LEGACY_V7_733_OVERFIT2_SFT_DIAGNOSTIC=true
+EOF
+  exit 67
+fi
 
 # These are also the base defaults. They stay explicit here because overfit is
 # the regression gate that catches accidental action-training recipe drift.

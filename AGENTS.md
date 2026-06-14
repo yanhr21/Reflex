@@ -15,7 +15,25 @@ world-model task rebinding:
 The goal is not to restore an old scene layout. The goal is task completion in
 the changed world.
 
-## Latest User Override: 2026-06-12
+## Latest User Override: 2026-06-13
+
+- Do not predeclare any row as a separate `DP-only` task branch from a
+  static/no-motion label. The controller boundary must be one unified causal
+  target-motion detector over observed state/history. If the detector never
+  fires, frozen DP naturally runs the full episode because Cosmos imagination
+  is unnecessary; this is a consequence of the same detector/controller rule,
+  not special treatment of static samples.
+- Do not use a sample label such as `none`, `static`, or `no-motion` to
+  predeclare controller mode. Those labels may describe data semantics in
+  reports, but they must not drive control flow. The only valid reason Cosmos3
+  stays inactive is that the same causal target-motion detector has not fired
+  from observed history/state.
+- Do not split the method into static-vs-dynamic sample protocols. Cosmos3,
+  DP resume, and any action-chunk handoff must use the same causal interface:
+  observed history/state decides whether target motion has occurred and whether
+  WM-active or DP-continuable mode is valid.
+
+## Previous User Override: 2026-06-12
 
 - Stop v7 data construction now. Do not continue generating or backfilling the
   v7 DP full1000 source set unless the user explicitly asks to resume data

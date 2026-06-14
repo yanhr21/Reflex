@@ -54,6 +54,15 @@ def parse_args() -> argparse.Namespace:
         default=8,
         help="After the Cosmos action chunk, execute up to this many frozen-DP actions for handoff smoke.",
     )
+    parser.add_argument(
+        "--allow-long-dp-diagnostic",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Allow dp_resume_horizon to exceed action_exec_horizon. This is a "
+            "diagnostic long-DP-takeover test only, not receding Cosmos method evidence."
+        ),
+    )
     parser.add_argument("--action-preview-sample-index", type=int, default=0)
     parser.add_argument(
         "--capture-live-video",
@@ -854,6 +863,14 @@ def run_live_smoke(
 
         report = {
             "ok": True,
+            "controller_interface": "one_shot_cosmos_chunk_then_optional_frozen_dp_resume",
+            "method_evidence_allowed": False,
+            "missing_method_requirements": [
+                "no_online_cosmos_reprediction_after_live_reobservation",
+                "no_external_dynamic_target_replay_after_prefix_reset",
+                "no_continuability_guard_before_long_frozen_dp_resume",
+                "no_future_task_state_reconstruction_fed_to_dp_resume_interface",
+            ],
             "source_h5": str(source_h5),
             "traj_name": traj_name,
             "reset_seed": int(reset_seed),
@@ -876,9 +893,10 @@ def run_live_smoke(
             "clip_live_actions": bool(args.clip_live_actions),
             "video_path": str(video_path) if video_written else None,
             "boundary": (
-                "Gated short live smoke. It starts from a restored source prefix "
-                "state, executes only a short predicted chunk plus optional DP "
-                "resume, and must be judged by live simulator metrics and video."
+                "Gated diagnostic live smoke. It starts from a restored source "
+                "prefix state, executes one precomputed predicted chunk plus "
+                "optional frozen-DP resume, and must not be treated as full "
+                "receding-Cosmos controller evidence."
             ),
         }
         write_manifest(output_root / "live_smoke_result.json", jsonable(report))
@@ -1016,6 +1034,9 @@ def main() -> int:
         "max_episode_steps": args.max_episode_steps,
         "action_exec_horizon": args.action_exec_horizon,
         "dp_resume_horizon": args.dp_resume_horizon,
+        "allow_long_dp_diagnostic": args.allow_long_dp_diagnostic,
+        "controller_interface": "one_shot_cosmos_chunk_then_optional_frozen_dp_resume",
+        "method_evidence_allowed": False,
         "capture_live_video": args.capture_live_video,
         "live_video_fps": args.live_video_fps,
         "clip_live_actions": args.clip_live_actions,
@@ -1032,7 +1053,10 @@ def main() -> int:
         "boundary": (
             "Preflight only unless the gate passes. Live simulator success must "
             "come from real env.step rollouts plus video review; generated RGB "
-            "or readout-only success is not controller evidence."
+            "or readout-only success is not controller evidence. This entry "
+            "point currently implements only a diagnostic one-shot Cosmos chunk "
+            "plus optional frozen-DP resume, not the full online receding "
+            "Cosmos interface required by the plan."
         ),
     }
     write_manifest(output_root / "closed_loop_preflight_manifest.json", manifest)
@@ -1048,6 +1072,12 @@ def main() -> int:
         failures.append("action_chunk_preview_failed")
     if not gate.get("closed_loop_allowed"):
         failures.append("closed_loop_gate_blocked")
+    if (
+        args.mode == "smoke"
+        and args.dp_resume_horizon > args.action_exec_horizon
+        and not args.allow_long_dp_diagnostic
+    ):
+        failures.append("long_dp_takeover_requires_explicit_diagnostic_override")
     if args.mode == "smoke" and not action_chunk_preview.get("source_context", {}).get("source_h5"):
         failures.append("live_source_h5_missing")
     if args.mode == "smoke" and not action_chunk_preview.get("source_h5_contract", {}).get("ok"):

@@ -2,6 +2,674 @@
 
 ## Current Status
 
+- [x] 2026-06-14 added an objective-level closed-loop gate:
+      `scripts/world_model/check_cosmos3_closed_loop_objective_gate.py`.
+      Current output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_objective_gate.json`
+      and `.md`. The gate checks the user's concrete closed-loop requirements
+      from current artifacts: full `300/301` videos, causal target-motion
+      detector rather than manual prefix selection, explicit annotated
+      controller timeline, no-motion DP-only behavior from the same detector,
+      moving-target WM activity, pure-DP comparison, and hard-case
+      action/rebind evidence. Current verdict:
+      `implementation_contract_ok=true`, `method_effectiveness_ok=false`.
+      Contract failures are empty. The gate now directly scans video files:
+      `26/26` raw/annotated videos have `301` frames with duration
+      `10.033333333333333` seconds at `30 fps`, so the old "less than five
+      seconds" failure is not present in the current iter2700 artifacts.
+      2026-06-14 hardening: moving-target samples now also must prove
+      causal detector provenance with
+      `prefix_selection.mode=target_motion_onset`, concrete detector/streak
+      frames, and at least `8` WM-active frames; no-motion must prove the same
+      detector never triggered. Current artifacts still pass this stricter
+      implementation contract.
+      2026-06-14 annotation hardening: the gate now also requires complete
+      `301`-frame `controller_timeline` and `annotated_video_summary.timeline`
+      records whose controller counts match the summary. Moving samples must
+      show WM-active frames in the annotated timeline; no-motion samples must
+      show zero annotated WM-active and zero target-motion-detected frames.
+      It also rejects missing/invalid `controller_frame_counts`, count sums
+      other than `301`, or mismatched annotated-summary counts. Video scanning
+      now has an OpenCV fallback so a single Python decoder import/read issue
+      does not convert a valid 301-frame artifact into a false contract
+      failure; all decoder failures still fail the video contract.
+      Method failures are
+      `val_cosmos_underperforms_same_source_pure_dp:1/3<pure_dp:3/3` and
+      `hard_case_not_broadly_reliable:1/6`. This means the short-video/hidden
+      trigger implementation problem is now repaired in the current artifacts,
+      but iter2700 is still not acceptable method evidence.
+      2026-06-14 no-motion hardening: the gate now also requires the
+      no-motion witness to record
+      `pretrigger_control_mode=frozen_dp_until_target_motion`, so a
+      source-restored/static-special branch cannot satisfy the DP-only
+      behavior requirement. The regenerated gate still has
+      `implementation_contract_ok=true` and `method_effectiveness_ok=false`.
+      2026-06-14 hard-case usefulness hardening: the gate now records
+      `min_hard_case_success_fraction=0.5` for the panel restricted to full
+      pure-DP failures, while preserving the stricter
+      `hard_case_not_broadly_reliable` all-success failure. Current iter2700
+      explicitly fails both usefulness checks:
+      `hard_case_success_fraction_below_minimum:1/6<min_fraction:0.5` and
+      `hard_case_not_broadly_reliable:1/6`.
+- [x] 2026-06-14 added wrapper-level protection for future live closed-loop
+      launches. The live-receding panel and single-sample wrappers now refuse
+      method runs that use manifest/manual prefixing, source-restored
+      pretrigger control, explicit role overrides, or disabled Cosmos
+      inference unless `ALLOW_LIVE_RECEDING_DIAGNOSTIC=true` is set. This is a
+      launch-time guard in addition to the objective gate, and prevents the old
+      hidden-onset/no-Cosmos diagnostic modes from being accidentally presented
+      as corrected closed-loop evidence.
+- [x] 2026-06-14 added
+      `scripts/world_model/selftest_cosmos3_closed_loop_objective_gate.py` so
+      the hardened gate can be checked locally without Slurm or video decoding.
+      It verifies valid causal moving/static summaries pass, while manual
+      prefixes, missing detector provenance, token one-frame WM use, and static
+      WM activation fail. It now also checks the structured annotation-timeline
+      contract behind the overlay videos. It also runs a subprocess end-to-end
+      gate check proving `panel_full_episode_contract_ok=false` rejects val
+      Cosmos, hard Cosmos, and pure-DP panel evidence.
+- [x] 2026-06-14 blocked accidental use of the old one-shot closed-loop
+      wrappers. `run_cosmos3_closed_loop_panel_in_allocation.sh` and
+      `run_cosmos3_receding_closed_loop_in_allocation.sh` now require
+      `ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC=true`; otherwise they exit
+      before creating outputs and point to the corrected full-300 live-receding
+      wrappers.
+- [x] 2026-06-14 added
+      `scripts/world_model/selftest_cosmos3_closed_loop_wrapper_guards.sh` as
+      a single local check for the wrapper guards. It verifies non-method
+      live-receding modes exit `42`, old one-shot wrappers exit `43`, and no
+      output directory is created before refusal.
+- [x] 2026-06-14 added a direct video-length audit tool:
+      `scripts/world_model/audit_video_length_contract.py`. It compares the
+      user-flagged old short run
+      `live_receding_panel10_corrected_iter2100_20260613_161006` against the
+      current iter2700 evidence roots. Output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2100_vs_iter2700_video_length_audit.json`
+      and `.md`. The old iter2100 path has only `2` final rollout videos and
+      both fail the `301`-frame contract: `131` frames / `4.3667s` and
+      `119` frames / `3.9667s`. The current iter2700 val, hard2, pure-DP, and
+      no-motion roots have `26/26` final raw/annotated videos matching
+      `301` frames and `10.0333s`. The old path is historical negative
+      evidence only and must not be used as current closed-loop method
+      evidence.
+- [x] 2026-06-14 hardened future closed-loop artifacts against the same
+      incomplete-video failure. `run_cosmos3_live_receding_loop.py` now
+      decodes the just-written raw and annotated mp4 files and records
+      `final_observed_video_inspection`,
+      `final_observed_annotated_video_inspection`, and
+      `video_file_contract_ok` in each sample summary. The pure-DP baseline
+      writes the same fields, and both panel wrappers propagate them into the
+      panel summaries. This is future-run enforcement: current evidence is
+      still proven by the objective gate and direct video-length audit above.
+      2026-06-14 hardening: the video inspection helper was moved to
+      `scripts/world_model/video_contract_utils.py`, now uses OpenCV fallback
+      after imageio decode/import failures, and `video_file_contract_ok`
+      requires the exact expected number of inspections. If annotated video is
+      enabled, both raw and annotated videos must exist, decode without error,
+      and contain `301` frames; a missing annotated inspection can no longer
+      be skipped by filtering out `None`. The objective gate and video-length
+      audit now reuse the same helper, so closed-loop summaries, current
+      evidence gates, and old-vs-current video audits all apply the same mp4
+      decoding contract.
+      2026-06-14 panel hardening: the live-receding panel and pure-DP panel
+      now compute `panel_full_episode_contract_ok` and
+      `sample_contract_failures`. A future panel returns failure if any sample
+      lacks a summary, misses the `300/301` contract, has a bad video contract,
+      or has controller-frame counts that do not sum to `301`. Pure-DP panels
+      also require `PURE_DP=300` and `WM_ACTIVE=0`. The objective gate treats
+      `panel_full_episode_contract_ok=false` as a contract failure when that
+      field is present. The shared logic lives in
+      `scripts/world_model/panel_contract_utils.py` and is covered by
+      `scripts/world_model/selftest_panel_contract_utils.py`.
+- [x] 2026-06-14 hard-screen-2 comparison completed to test whether Cosmos
+      helps specifically where full-episode pure DP fails. A 15-sample
+      high-motion manifest was selected at
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/hard_case_eval_manifest.json`.
+      Pure DP completed all `15` full `300/301` rollouts and succeeded on
+      `9/15`; the six pure-DP failures were indices `4,9,10,11,12,13`.
+      Cosmos closed-loop was run only on those six failures under
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen2_20260614/cosmos_iter2700_puredp_fail_4_9_10_11_12_13`.
+      Cosmos succeeded on `1/6`: `hole_late_fast_shift` index `4`, with
+      full `300/301`, detector trigger `f86`, frame counts
+      `{INIT_OBS:1, DP_SCAN_TARGET:86, WM_ACTIVE:56, DP_HANDOFF:158}`,
+      final success `true`, and peg-head-at-hole
+      `[-0.0071999, 0.0015902, 0.0021036]`. The same-source pure-DP baseline
+      for index `4` failed with peg-head-at-hole
+      `[-0.0958784, 0.0228078, -0.0324848]`. The Cosmos panel sheet plus
+      the index-4 Cosmos and pure-DP annotated sheets/final frames were opened
+      directly. This gives a second positive hard-case comparison, but the
+      broader `1/6` result means the current iter2700 closed-loop is not a
+      broadly reliable solution yet.
+- [x] 2026-06-14 added a read-only hard-screen-2 action/rebind diagnostic:
+      `scripts/world_model/analyze_cosmos3_hard_case_action_rebind.py`.
+      Output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_hard_screen2_action_rebind_analysis.json`.
+      It compares executed Cosmos action chunks against same-H5 source-teacher
+      action rows for failure localization only; teacher actions are not used
+      for control. On the six matched pure-DP failures, pure DP success is
+      `0/6` and Cosmos success is `1/6`. The five Cosmos failures are dominated
+      by `rel_y_abs`, `rel_z_abs`, occasional `grasped`, and action
+      direction/scale mismatch, so the current failure mode is raw action
+      rebind reliability, not incomplete 300-frame rollout or missing Cosmos
+      activation. Do not treat this checkpoint as broadly solved; the aligned
+      repair remains clean-role/dense-receding condition export plus approved
+      overfit/full SFT, or a learned short-chunk executor if direct raw Cosmos
+      actions remain unstable.
+- [x] 2026-06-14 added a read-only failure-mode reducer:
+      `scripts/world_model/summarize_cosmos3_closed_loop_failure_modes.py`.
+      Output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_failure_modes.json`
+      and `.md`. It combines the objective gate and hard action/rebind
+      analysis into one method-boundary summary. Current verdict remains
+      `implementation_contract_ok=true` and `method_effectiveness_ok=false`.
+      The hard failures are dominated by real-state handoff blocks on
+      `rel_y_abs=203` and `rel_z_abs=195`, with additional raw action
+      direction/scale flags versus teacher chunks. This explicitly rules out
+      the old short-video/manual-trigger/missing-Cosmos-annotation issue as
+      the primary current blocker and records the active blocker as direct raw
+      Cosmos action rebinding plus DP-continuability reliability.
+- [x] 2026-06-14 added a requirement-level audit:
+      `scripts/world_model/audit_cosmos3_closed_loop_requirements.py`.
+      Output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_requirement_audit.json`
+      and `.md`. It maps the user's original closed-loop requirements to
+      current evidence instead of treating one gate as the whole objective.
+      Current status is `current_goal_achieved=false` with
+      `{'passed': 6, 'partial': 1, 'failed': 1}`. Passed items are old-short
+      iter2100 rejection, current 300/301 videos, causal target-motion
+      detection, nonzero Cosmos takeover, explicit takeover annotation, and
+      no-motion DP-only behavior from the same detector. The partial item is
+      DP handoff: available and sometimes successful, but not reliable. The
+      failed item is method effectiveness against pure DP. This audit is the
+      current requirement-level proof that the implementation boundary is
+      repaired but the full objective is not complete.
+- [x] 2026-06-14 added a live-query/training-coverage audit:
+      `scripts/world_model/audit_cosmos3_live_query_training_coverage.py`.
+      Output:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_live_query_training_coverage_audit.json`
+      and `.md`. It compares actual val/hard2 live Cosmos query states against
+      the old SFT condition rows. Current result: `173` live Cosmos queries,
+      `1193/2899` training role/mode mismatches, and `74/173` live queries
+      without a local role/mode-consistent training neighbor under the chosen
+      prefix/geometry tolerances. This supports the current repair direction:
+      do not keep broad-evaluating iter2700; fix the clean-role/dense-receding
+      condition distribution first. The audit is covered by
+      `scripts/world_model/selftest_cosmos3_live_query_training_coverage.py`.
+      The full v7_733 clean/dense preflight wrapper now defaults to running
+      this coverage audit and passes it into
+      `summarize_cosmos3_clean_dense_preflight.py`; `ready_for_overfit` fails
+      if the new condition root does not cover the recorded live queries under
+      the configured role/mode and geometry thresholds. The overfit2 preflight
+      keeps the audit disabled by default because it is only a two-sample
+      chain sanity check. The full preflight wrapper now refuses real
+      execution if the coverage audit is disabled without the explicit
+      diagnostic override
+      `ALLOW_SKIP_LIVE_QUERY_COVERAGE_DIAGNOSTIC=true`, and it checks that the
+      configured panel summary paths exist before handing off to the base
+      preflight wrapper. If that diagnostic override is used, the base summary
+      receives `diagnostic-not-ready` metadata and must report
+      `ready_for_overfit=false`. The overfit SFT entry also validates the
+      summary with
+      `scripts/world_model/check_cosmos3_clean_dense_preflight_summary_ready.py`,
+      so `failed_checks` or diagnostic metadata cannot be bypassed by a
+      hand-edited `ready_for_overfit=true` flag.
+- [x] 2026-06-14 old sampled-role v7_733 SFT wrappers are no longer active
+      repair entries. The full sampled-role fix1 wrapper exits `66` by
+      default when `RUN_SFT=true`, and the old sampled-role overfit2 wrapper
+      exits `67`; both require explicit legacy diagnostic overrides and have
+      login-safe `DRY_RUN_CONFIG_ONLY=true` output. Active SFT repair must go
+      through clean-role/dense-receding preflight and a matching
+      ready-for-overfit summary. Guard behavior is covered by
+      `scripts/world_model/selftest_cosmos3_legacy_sft_wrapper_guards.sh`.
+- [x] 2026-06-14 recorded the user-requested val/hard pure-DP comparison and
+      the follow-up step-level handoff probe:
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_val_hard_puredp_comparison_and_stepgate_probe.md`.
+      The val comparison is negative (`Cosmos=1/3`, same-source pure
+      `DP=3/3`). The harder comparison is mixed but not sufficient
+      (`Cosmos=1/6` on the six hard-screen-2 samples where full pure DP
+      failed). A diagnostic `--cosmos-step-handoff-gate` probe on hard-screen-2
+      index `12` was interrupted only by the Slurm allocation time limit, not
+      by manual cancellation; no full panel/sample summary exists, so it is
+      not complete method evidence. Its partial summary reached frame `188`
+      with `success=false`; it did show one real-state C_pi pass followed by an
+      8-step DP handoff that drifted laterally and lost continuability again.
+      This reinforces the current diagnosis: the remaining blocker is unstable
+      action/rebind plus DP-continuability, not missing hard-case comparison.
+- [x] 2026-06-14 hard comparison completed on hard-screen samples where full
+      pure DP failed: continuous-insert index `1` and move-stop index `3` from
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen_20260614/hard_case_eval_manifest.json`.
+      Cosmos run root:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/hard_case_screen_20260614/cosmos_iter2700_hard_dp_fail_1_3`.
+      Continuous-insert stayed failed under Cosmos (`300/301`, trigger `f134`,
+      `WM_ACTIVE=166`, final success `false`). Move-stop is the positive
+      comparison sample: pure DP failed, while Cosmos ran `WM_ACTIVE=48` after
+      trigger `f84`, then real-state-gated `DP_HANDOFF=168`, ending with
+      final success `true` and peg-head-at-hole
+      `[-0.0096748, -0.0019456, -0.0029760]`. Cosmos and pure-DP videos for
+      move-stop were opened directly and visually match the metrics.
+- [x] 2026-06-14 same-source full-episode pure-DP baseline was added and run
+      for the iter2700 val dynamic panel. Code:
+      `scripts/world_model/run_dp_full_episode_baseline.py` and
+      `scripts/world_model/run_dp_full_episode_baseline_panel.py`. Output:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/dp_full_episode_baseline_iter2700_panel3_dynamic_20260614_alloc127559`.
+      Pure DP succeeded on all three same-source panel samples (`3/3`), while
+      Cosmos closed-loop succeeded on only `1/3`. This is negative comparison
+      evidence for the current iter2700 closed-loop interface; it does not
+      validate Cosmos as useful on this val panel.
+- [x] 2026-06-13/14 the scenario-panel `sample_03_hole_late_fast_shift`
+      completed and was inspected. It reached `300` actions / `301` frames,
+      detector trigger `f132`, and
+      `controller_frame_counts={INIT_OBS:1, DP_SCAN_TARGET:132,
+      WM_ACTIVE:32, DP_HANDOFF:136}`. Final success is `false` with
+      peg-head-at-hole
+      `[-0.0649778, 0.0001627, -0.0006470]`. The annotated sheet and final
+      frame show WM then DP handoff through `frame 300/300`, but the peg is
+      still outside the hole.
+- [x] 2026-06-13 iter2700 full-300 unified-detector closed-loop eval completed
+      after the user clarified that no sample may be predeclared as
+      `DP-only` from a static/no-motion label. The controller boundary is one
+      causal target-motion detector; if it never fires, frozen DP continues by
+      that same rule. The dynamic sample `hole_late_move_stop` did trigger at
+      `f106` and ran to the full `300` action / `301` frame contract with
+      `full_episode_length_ok=true`. Final success is `false`; final
+      peg-head-at-hole is `[-0.1056687, -0.0143125, -0.0550163]`.
+      Annotated/raw videos and opened review sheets are under
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_sample00_20260613_alloc127559`.
+      Evidence note:
+      `docs/world_model_task_rebinding/2026-06-13_iter2700_full300_unified_closed_loop_eval.md`.
+- [x] 2026-06-13 the same `iter2700` full-300 closed-loop path has now also
+      produced an inspected complete scenario-panel dynamic sample:
+      `sample_01_hole_late_constant` under
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_panel3_dynamic_20260613_alloc127559`.
+      It reached `final_prefix_frame_index=300` and
+      `final_observed_frames=301`, with detector trigger `f94` and
+      `controller_frame_counts={INIT_OBS:1, DP_SCAN_TARGET:94,
+      WM_ACTIVE:206}`. The annotated sheet and final frame were opened
+      directly and show explicit `controller=WM_ACTIVE`,
+      `target_motion_detected=True`, `trigger=94` through `frame 300/300`.
+      Final success is still `false`, with peg-head-at-hole
+      `[-0.1030322, -0.0450076, -0.0782132]`, so this is full-length
+      controller-negative evidence, not task success.
+- [x] 2026-06-13 the scenario-panel `sample_02_hole_late_reverse` produced
+      the first inspected positive full-length closed-loop result for the
+      current `iter2700` interface. It reached `300` actions / `301` frames,
+      detector trigger `f104`, and
+      `controller_frame_counts={INIT_OBS:1, DP_SCAN_TARGET:104,
+      WM_ACTIVE:40, DP_HANDOFF:156}`. The first five post-trigger chunks were
+      Cosmos rebind chunks; the real-state continuability gate became true at
+      prefix `f144`, and the loop then used short reobserved frozen-DP handoff
+      chunks through the full horizon. Final success is `true` with
+      peg-head-at-hole `[0.0061689, 0.0014199, -0.0005607]`. Raw and
+      annotated videos are readable/nonblank `301`-frame videos; opened
+      review sheets show `WM_ACTIVE` after target-motion detection and
+      `DP_HANDOFF` through `frame 300/300`, with the peg visibly inserted in
+      the moved hole. This supports the intended Cosmos-rebind plus
+      DP-continuable handoff design on this sample, while the panel is still
+      running on `sample_03_hole_late_fast_shift`.
+- [x] The same iter2700 full-300 closed-loop code path was also checked on a
+      no-motion `none` sample:
+      `experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_static_none_fix1_20260613_alloc127559`.
+      It ran to `300` actions / `301` frames with
+      `triggered=false`, `wm_active_frame_count=0`, no Cosmos inference
+      directory, and annotated video showing `DP_SCAN_TARGET` through
+      `frame 300/300`. This verifies that no-motion uses the same detector
+      rule rather than a separate static branch or label-driven bypass. The
+      DP final task success was false on this seed, so static preservation
+      remains a separate performance issue.
+- [x] 2026-06-13 closed-loop failure analysis is now the active boundary.
+      The corrected long-horizon live-receding eval failed on sample `00`, and
+      a follow-up code/data audit did not find a simple action-row offset or
+      remaining live-history conditioning bug. The current failure is best
+      classified as model/action rebind capability under distribution drift:
+      role captions are not cleanly aligned with actual physical modes,
+      training prefixes are sparse rather than dense receding states, and the
+      live loop asks the model to recover from its own off-source misses after
+      target motion. Later checkpoint evidence through `iter_000002700` is
+      still controller-blocked by visual review, so continuing smoke training
+      or running broader panels is not justified from the current evidence.
+      See
+      `docs/world_model_task_rebinding/2026-06-13_corrected_live_receding_panel_failure.md`.
+- [x] Added a read-only training-distribution audit for the failed receding
+      interface:
+      `scripts/world_model/audit_cosmos3_receding_training_distribution.py`.
+      The current v7_733 condition root has `1193/2899` role/mode mismatches,
+      no action condition-mask errors, and `1287` late-rebind proxy rows.
+      The repair plan is now
+      `PLAN/cosmos3_300f_world_model/07_post_closed_loop_failure_repair.md`
+      with execution TODO in
+      `TODO/cosmos3_300f_world_model/09_post_closed_loop_failure_repair.md`.
+- [x] Implemented the clean-role/dense-receding condition-export repair
+      entry point without launching SFT. The exporter now accepts
+      `--prefix-role-source physical_mode` and
+      `--dense-receding-prefix-stride N`, while default sampled-role behavior
+      remains unchanged for old-root reproduction. A `/tmp` two-episode probe
+      produced `23` full-episode rows with `0` role/mode mismatches.
+      Re-exporting the full v7_733 condition root and any training remain
+      pending user approval.
+- [x] Hardened the clean/dense preflight path without launching SFT. The
+      receding-distribution audit now owns hard gates:
+      physical-mode exports fail on nonzero role/mode mismatch, condition-mask
+      errors can be hard-failed, and minimum late-rebind coverage can be
+      required. The Slurm preflight wrapper calls this audit directly and no
+      longer relies on inline Python shell checks. `/tmp` validation passed:
+      clean physical-mode probe `strict_ok=true`, mismatch `0`, late-rebind
+      `18`; old sampled root remains report-only with mismatch `1193`.
+- [x] Added a clean/dense preflight summarizer:
+      `scripts/world_model/summarize_cosmos3_clean_dense_preflight.py`.
+      Approval-time preflight will now write `clean_dense_preflight_summary`
+      artifacts and must show `ready_for_overfit=true` before any overfit SFT.
+- [x] Added `MAX_RECORDS` passthrough and a clean/dense overfit2 preflight
+      wrapper. Dry-run verified it defaults to `EXPECTED_SOURCE_EPISODES=2`,
+      `MAX_RECORDS=2`, and `RUN_SFT=false`, so future overfit condition export
+      can be audited separately before any training.
+- [x] Hardened the clean/dense overfit2 SFT wrapper. It now has a
+      login-safe `DRY_RUN_CONFIG_ONLY=true` mode that reports missing
+      approval/preflight requirements without launching work, and real
+      execution refuses unless `ALLOW_CLEAN_DENSE_OVERFIT_SFT=true`, an
+      explicit `CONDITION_ROOT`, and a matching
+      `CLEAN_DENSE_PREFLIGHT_SUMMARY` with `ready_for_overfit=true` are
+      provided.
+- [x] Added a current SFT/closed-loop monitoring note:
+      `docs/world_model_task_rebinding/2026-06-13_cosmos3_sft_closed_loop_current_status.md`.
+      It records that `127350` is extern-only, no training/eval process is
+      active, checkpoints exist through `iter_000002700`, the latest log line
+      is around iteration `2735`, `sft_completed` is stale relative to the
+      log, `iter2700` generated eval is visually gated off, and corrected
+      live closed-loop remains negative.
+- [x] Added a reusable read-only status summarizer:
+      `scripts/world_model/summarize_cosmos3_sft_closed_loop_status.py`.
+      It reads Slurm steps, matching training/eval processes, SFT logs,
+      checkpoints, generated-eval gates, and live-receding summaries without
+      running Cosmos/ManiSkill. Current output:
+      `docs/world_model_task_rebinding/2026-06-13_cosmos3_sft_closed_loop_status_auto.json`
+      and `.md`; it reports active process count `0`, extern-only Slurm
+      allocation, latest checkpoint `iter_000002700`, latest visible train
+      iteration `2735`, stale `sft_completed`, latest eval
+      `closed_loop_allowed=false`, visual status `fail`, and no successful
+      recent live run.
+- [x] Added a short monitor wrapper:
+      `scripts/world_model/monitor_current_cosmos3_sft_closed_loop_status.sh`.
+      It reruns the read-only status summarizer with the current SFT root and
+      Slurm job `127350`, updating the auto JSON/MD status files. The latest
+      wrapper run still reports active process count `0`, extern-only
+      allocation, latest checkpoint `iter_000002700`,
+      `closed_loop_allowed=false`, visual status `fail`, and no successful
+      recent live run.
+- [x] Added a read-only next-action gate:
+      `scripts/world_model/check_cosmos3_next_action_gate.py`. Current status
+      JSON rejects `resume_current_condition_sft` and
+      `launch_broad_panel_current_checkpoint` with
+      `latest_generated_eval_controller_blocked`; it rejects
+      `clean_dense_preflight_after_user_approval` unless the user approval
+      flag is explicit; and it still rejects
+      `clean_dense_overfit_sft_after_user_approval` until a matching
+      clean-dense preflight summary records `ready_for_overfit=true`.
+      Current approved-preflight-only verdict is recorded at
+      `docs/world_model_task_rebinding/2026-06-13_cosmos3_next_action_gate_clean_dense_preflight.json`.
+      2026-06-14 hardening: the gate now accepts
+      `--requirement-audit-json` and refuses old-checkpoint resume/broad-panel
+      actions when the requirement audit has `current_goal_achieved=false`.
+      Current outputs:
+      `docs/world_model_task_rebinding/2026-06-14_cosmos3_next_action_gate_launch_broad_panel_requirement_audit.json`
+      and
+      `docs/world_model_task_rebinding/2026-06-14_cosmos3_next_action_gate_resume_current_requirement_audit.json`.
+      Both are denied with `closed_loop_requirement_audit_not_achieved`, and
+      list `dp_handoff_available_but_not_proven_reliable` plus
+      `method_effectiveness_against_pure_dp` as the remaining failed/partial
+      requirement IDs.
+      2026-06-14 repair-path hardening: the gate now also accepts
+      `--clean-dense-preflight-summary-json`. The
+      `clean_dense_overfit_sft_after_user_approval` action is allowed only
+      when the user approval flag is set, no active process is detected, and
+      that summary records `ready_for_overfit=true`. It is not blocked merely
+      because the old iter2700 requirement audit is incomplete, since this is
+      a repair action rather than a claim that the old checkpoint works.
+      Current output without a ready summary is
+      `docs/world_model_task_rebinding/2026-06-14_cosmos3_next_action_gate_clean_dense_overfit_requires_ready_summary.json`
+      and is correctly denied with
+      `requires_clean_dense_preflight_summary_ready_for_overfit`.
+      The guarded clean/dense overfit SFT Slurm wrapper now calls this
+      next-action gate before its inline summary/condition-root check and
+      before delegating to the base training wrapper. Its gate output defaults
+      to `next_action_gate_clean_dense_overfit_sft.json` next to the supplied
+      preflight summary.
+- [x] Added a status-refreshing next-action gate wrapper:
+      `scripts/world_model/check_current_cosmos3_next_action_gate.sh`. It
+      first reruns the read-only monitor, then checks the requested action so
+      decisions do not rely on stale status JSON. While validating this path,
+      the process monitor was repaired to use `ps` filtering instead of
+      `pgrep -af`, avoiding false active-process counts caused by concurrent
+      read-only gate checks. Current gate validation: old SFT resume and
+      current-checkpoint broad panel both exit `2`; user-approved clean/dense
+      preflight is allowed; clean/dense overfit SFT still exits `2` until
+      `ready_for_overfit=true` exists.
+      The wrapper now passes
+      `docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_requirement_audit.json`
+      to the gate automatically when that file exists, so status refreshes and
+      action checks include the current requirement-level audit.
+      If `CLEAN_DENSE_PREFLIGHT_SUMMARY` points at an existing summary file,
+      the wrapper also passes it to the gate for overfit-readiness checks.
+- [x] Added and ran a lightweight next-action gate self-test:
+      `scripts/world_model/selftest_cosmos3_next_action_gate.py`. It verifies
+      that old-condition SFT resume and current-checkpoint broad panel are
+      rejected, clean/dense preflight requires explicit user approval, approved
+      preflight is the only allowed action in the idle blocked state, and
+      clean/dense overfit SFT remains rejected until a ready-for-overfit
+      preflight summary exists. It now also verifies that even if status flags
+      claim old-checkpoint resume/panel are safe, an incomplete requirement
+      audit still blocks those actions while leaving approved clean/dense
+      preflight possible. It now also verifies clean/dense overfit remains
+      denied without a ready preflight summary or without user approval, and
+      becomes allowed only when `ready_for_overfit=true` is supplied. Current
+      run printed
+      `cosmos3_next_action_gate_selftest=passed`.
+- [x] Enforced that user-approved clean/dense preflight is explicit at the
+      Slurm wrapper level. The full v7_733 and two-source overfit2 preflight
+      wrappers now refuse real execution unless
+      `ALLOW_CLEAN_DENSE_PREFLIGHT=true` is set. `DRY_RUN_CONFIG_ONLY=true`
+      remains login-safe; with the approval variable on a login node, the
+      read-only next-action gate can pass, but the base wrapper still refuses
+      before export because there is no compute-node `srun` step.
+- [x] Added a read-only command printer:
+      `scripts/world_model/print_cosmos3_clean_dense_preflight_commands.sh`.
+      It prints the exact approved full and overfit2 clean/dense preflight
+      commands with `ALLOW_CLEAN_DENSE_PREFLIGHT=true`, while explicitly
+      noting they must be run only after user approval from inside a
+      compute-node `srun` step and default to `RUN_SFT=false`. The helper
+      does not call Slurm, export data, train, render, or run eval.
+- [x] 2026-06-13 user-directed closed-loop eval was advanced without further
+      smoke training. The corrected prompt-fixed long-horizon live-receding
+      run
+      `live_receding_promptfix_sample0_longhorizon_iter2100_20260613`
+      completed on allocation `127350` with checkpoint `iter_000002100`,
+      sample `00` (`hole_late_move_stop`), target-motion-onset prefix `f106`,
+      target-only source replay, `12` receding Cosmos chunks, and real-state
+      `C_pi` DP handoff gating. It ran to frame `202` and failed:
+      final peg-head-at-hole `[-0.1423, 0.0004, 0.0101]`,
+      final success `false`, and DP handoff `0` steps. The source teacher for
+      the same H5 first inserts at `f166` and is inserted at `f202`, so this
+      is a real corrected closed-loop failure rather than an eval horizon
+      artifact. Visual review of the panel sheet plus the dense 18-frame
+      rollout sheet confirms the peg remains outside the moved hole. Current
+      failure classification: executable Cosmos action/rebind capability,
+      especially late post-motion insertion correction, not the old
+      source-H5 conditioning bug, not a prompt-only mismatch, and not blind
+      DP takeover. Do not resume smoke training from this evidence.
+- [x] 2026-06-13 closed-loop audit after user stop request: both active SFT
+      foreground training commands were interrupted inside their held tmux/
+      Slurm allocations, not cancelled with `scancel`. Jobs `127281`,
+      `127286`, and `127350` remain held as extern allocations only, and no
+      `torchrun`/SFT `srun` process is active. Do not continue training until
+      the closed-loop/DP handoff code path is repaired.
+- [x] Closed-loop eval code audit found the current
+      `run_cosmos3_receding_closed_loop.py` path is not the method described
+      in `IDEA.md` and `PLAN/cosmos3_300f_world_model/03_testing_and_metrics.md`.
+      It restores one source prefix state, executes one precomputed Cosmos
+      robot-action chunk, then optionally lets frozen DP run for a long
+      takeover horizon. It does not rerun Cosmos after live re-observation,
+      does not replay the source H5 external target motion after prefix reset,
+      does not use a continuability guard before long DP resume, and does not
+      provide a predicted future task-state/reconstruction interface for DP
+      resume. Treat existing `8+96` DP panels as diagnostic only.
+- [x] First repair toward the intended closed-loop interface: added a
+      live-prefix Cosmos policy input builder and compute-node inference
+      wrapper. This creates one causal re-observation sample from observed
+      prefix RGB plus history action/state rows so the future loop can rerun
+      Cosmos after each short executed chunk. A local builder-only probe passed
+      on an iter2100 sample; no training, Cosmos inference, or simulator
+      rollout was launched for this probe.
+- [x] Added the next closed-loop scaffold:
+      `run_cosmos3_live_receding_loop.py`. It is compute-node-only and, in
+      dry-run mode, prepares the per-reobservation prefix video plus raw WAM
+      history without running Cosmos. The required causal video rule is now
+      explicit: live-prefix videos must contain only frames
+      `[0, prefix_frame_index]`; full future reference videos are refused by
+      default. Syntax checks pass, but no live controller evidence exists yet.
+- [x] 2026-06-13 eval-physics repair after rereading the plan: fix3 moving-hole
+      source H5s encode target motion by manually setting
+      `env_states/actors/box_with_hole` after each action step. The old live
+      eval restored `env_states[prefix]` once and then stepped robot actions
+      without continuing that external target motion, so pre-motion live
+      rollouts were testing the wrong physical world. The live receding loop
+      now defaults to `--external-target-mode source_env_state`, replaying only
+      the source target actor pose at `frame+1` after each live robot action
+      while leaving robot/peg state live. It also maintains a fresh two-frame
+      state-observation history after the target replay for any later DP
+      handoff, instead of using the stale observation returned before target
+      replay.
+- [x] First post-repair live receding smoke completed without any new training:
+      `live_receding_statsprofile32_gate_iter2100_sample00_20260613_1518`.
+      It used `iter_000002100`, source sample
+      `hole_late_move_stop_seed3280649_idx2518`, prefixes `97`, `105`, and
+      `113`, and `--external-target-mode source_env_state`. The run replayed
+      source target actor states through frame `121`, so the target actually
+      moved during live eval. Final simulator success remained `false` with
+      peg-head-at-hole about `[-0.2527, 0.0825, -0.0031]`; the static-DP
+      continuability gate correctly blocked DP on all three iterations. The
+      contact sheet `live_observed_rollout_contact_sheet.png` was opened
+      directly and shows the target moving away while the robot/peg do not
+      rebind to the new hole. This is controller-negative evidence for the
+      current checkpoint/action loop, not a reason to train longer.
+- [x] Live receding dry-run smoke completed inside held compute allocation
+      `127350` without Cosmos inference:
+      `live_receding_dryrun_iter2100_sample00_20260613_131044`. It restored
+      sample-00 prefix frame `97`, wrote a `98`-frame observed-prefix video
+      and raw `300x32` WAM history, then stopped because Cosmos inference was
+      disabled. This verifies the reobservation input path, not controller
+      success.
+- [x] Patched live-prefix inference smoke completed on Slurm allocation
+      `127350` using `iter_000002100`, sample `0`, prefix frame `97`, and an
+      `8`-step action chunk:
+      `live_receding_oneiter_cosmos_iter2100_sample00_with_live_video_20260613_1329`.
+      The run rebuilt a causal prefix from rendered env states, invoked
+      Cosmos once, executed only rows `97:105` in the live simulator, and
+      saved `live_observed_rollout.mp4`. Final simulator success is `false`;
+      peg-head-to-hole changed from about `[-0.194, 0.057, -0.030]` before
+      the chunk to `[-0.140, 0.031, -0.016]` after the chunk. The contact
+      sheet was opened directly. This is useful interface evidence that
+      live-prefix inference and short action execution work, but it is not
+      closed-loop method success and it does not justify more SFT training.
+- [x] Live receding implementation progressed beyond one-step smoke. The
+      `iter_000002100` sample-0 five-iteration run
+      `live_receding_fiveiter_gated_dp_iter2100_sample00_20260613_1353`
+      rebuilt a fresh causal prefix after each real 8-step execution and
+      reran Cosmos at prefixes `97`, `105`, `113`, `121`, and `129`. It
+      executed `40` real Cosmos robot actions, saved `live_observed_rollout.mp4`,
+      and ended `success=false` with peg-head-to-hole about
+      `[-0.1085, 0.0067, -0.0012]`. The conservative live `C_pi` gate blocked
+      DP every time, correctly preventing long static-DP handoff while the
+      insertion-axis distance was still too large.
+- [x] A relaxed-gate DP handoff diagnostic was run and must not be used as
+      method evidence:
+      `live_receding_dpstatic32_gate_iter2100_sample00_20260613_1410`.
+      It manually loosened `continuability_min_rel_x` and triggered `32`
+      frozen-DP steps after the third Cosmos chunk; final live state improved
+      to about `[-0.0197, 0.0027, -0.0003]` but still had
+      `success=false`. The reviewed contact sheet shows near-hole alignment,
+      not completed insertion. This is evidence against premature/relaxed DP
+      handoff, not a success.
+- [x] The relaxed gate has now been converted into an explicit static-DP
+      success-manifold profile option. `run_cosmos3_live_receding_loop.py`
+      accepts `--continuability-stats-json` and derives the handoff bounds
+      from `dp_static_continuability_stats.json` instead of unrecorded
+      threshold edits. A loader check on the current stats file with horizon
+      `32` used `31,218` static-DP success-predecessor records and produced
+      `min_rel_x=-0.1342566`, `max_abs_y=0.0098417`, and
+      `max_abs_z=0.0038843` while preserving `max_rel_x=0.04` as the safety
+      cap. Future closed-loop smoke/panels should use this recorded profile
+      path when testing DP handoff from the live receding loop.
+- [x] The first stats-profile live receding smoke completed on compute
+      allocation `127350` without any SFT continuation:
+      `live_receding_statsprofile32_gate_iter2100_sample00_20260613_1518`.
+      It ran three true reobserve/rerun Cosmos iterations from prefixes
+      `97`, `105`, and `113` with `--prefix-role auto` and the 32-step
+      static-DP profile. The profile gate blocked DP at every iteration, and
+      final live success was `false`; peg-head-to-hole ended around
+      `[-0.2527, 0.0825, -0.0031]`. The opened contact sheet shows the target
+      moving while the real peg/hand does not keep up. This is negative
+      controller evidence, but it verifies the corrected closed-loop eval path
+      is now testing the intended mechanism instead of the old one-shot
+      Cosmos plus blind long-DP takeover.
+- [x] Added a corrected live-receding panel wrapper so future eval cannot
+      silently fall back to the old one-shot DP96 diagnostic path:
+      `scripts/world_model/run_cosmos3_live_receding_panel.py` and
+      `scripts/slurm/run_cosmos3_live_receding_panel_in_allocation.sh`. The
+      wrapper reads `eval_input_manifest.json`, resolves each source H5 from
+      the frozen v7 canonical source root, defaults `prefix-role=auto`, keeps
+      `external-target-mode=source_env_state`, and runs
+      `run_cosmos3_live_receding_loop.py` per sample. It records
+      `method_evidence_allowed=false` and emits a contact sheet for direct
+      review. Local `py_compile`, `bash -n`, and `git diff --check` passed;
+      no login-node rollout/Cosmos inference/training was run.
+- [x] 2026-06-13 prefix-start correction: fixed manifest prefix frames are not
+      the planned closed-loop interface. The live loop now has
+      `--prefix-start-mode target_motion_onset`, and the live-receding panel
+      defaults to that mode. It selects the first Cosmos prefix from observed
+      target-object motion using the current/past `box_with_hole` pose only;
+      the old `manifest`/manual prefix mode remains explicit diagnostic-only
+      behavior. A source-H5 check selected frame `106` for
+      `hole_late_move_stop_seed3280649_idx2518`, instead of the manifest's
+      hand-picked frame `97`. Any fixed-`f097` `long7/long8` live eval
+      artifacts from today are invalid diagnostic leftovers and should not be
+      interpreted.
+- [x] First corrected dynamic-trigger smoke completed on allocation `127350`
+      with no training:
+      `live_receding_dynamic_trigger_smoke_iter2100_sample00_20260613_151213`.
+      The panel wrapper ran with `PREFIX_START_MODE=target_motion_onset`,
+      selected dynamic prefix frame `106` instead of manifest frame `97`,
+      executed one 8-step live Cosmos action chunk, and replayed only target
+      source frames `107..114`. Final live success was `false`; DP handoff was
+      blocked by the static-DP continuability profile, with final
+      peg-head-at-hole about `[-0.1743, 0.0493, -0.0026]`. Direct visual
+      review of the generated 16-frame sheet shows no insertion and no valid
+      DP-continuable pose. This is a corrected eval-path smoke, not method
+      success and not a reason to resume SFT.
+- [x] Also repaired the older single-sample live-loop Slurm wrapper
+      `scripts/slurm/run_cosmos3_live_receding_loop_in_allocation.sh`, which
+      was still capable of launching fixed `PREFIX_FRAME_INDEX=97` runs by
+      default. Its default is now dynamic target-motion onset. The accidental
+      `long7_v3` fixed-prefix step on `127350.35` was terminated without
+      cancelling the held allocation, and its partial artifacts should be
+      ignored.
+- [x] The active live loop now also fixes the pretrigger source-restore
+      weakness. Default `--pretrigger-control-mode` is
+      `frozen_dp_until_target_motion`: restore source frame `0`, run frozen DP
+      live while replaying only target actor motion, trigger on observed
+      target motion, then call Cosmos. Dry-run
+      `live_pretrigger_dp_dynamic_trigger_dryrun_iter2100_sample00_20260613_152400`
+      verified `106` real DP pretrigger steps and a causal trigger at frame
+      `106`. Full smoke
+      `live_pretrigger_dp_dynamic_trigger_cosmos1_iter2100_sample00_20260613_152608`
+      then executed one Cosmos chunk after that live prefix. Final live
+      success remained `false`; DP handoff was correctly blocked by the
+      static-DP continuability profile. The reviewed 16-frame rollout sheet
+      shows target motion and no valid insertion/rebind.
+- [x] `run_cosmos3_live_receding_loop.py` now supports automatic observed
+      prefix role inference from live history. A false `peg_recovery` trigger
+      caused by one noisy current grasp predicate at f97 was fixed by
+      requiring stable lost grasp after recent grasp history is absent, or an
+      explicit peg perturbation scenario. A local function check on the f97
+      history returns `target_pre_motion`.
 - [x] 2026-06-12 training correction: the v7_733 `normactive_clip1` SFT was
       stopped after config audit confirmed it did not carry the fix1 action
       recipe. The failure was not literally missing selected action tensors:
@@ -128,13 +796,19 @@
       `8 + 32` steps and still ended with `success=false`; visual contact
       sheet review agrees that insertion was not completed. These are
       negative live controller diagnostics, not method success.
-- [x] Current resource use after the 2-card correction: primary SFT job
-      `127281` on `server31` is still the only writer to the main root and was
-      observed at rank-0 iteration `1893`; all `4` GPUs were at `100%`
+- [x] Superseded resource note from before the 2026-06-13 closed-loop audit:
+      primary and shadow SFT were active then, but the latest user instruction
+      stops further training while the closed-loop/DP handoff implementation
+      is audited. Current checked Slurm steps for `127281`, `127286`, and
+      `127350` are extern allocations only; no active SFT step is running.
+- [x] Historical resource use before the 2026-06-13 closed-loop audit:
+      primary SFT job
+      `127281` on `server31` was the only writer to the main root and was
+      observed at rank-0 iteration `1893`; all `4` GPUs were then at `100%`
       utilization. Independent two-GPU shadow continuation job `127286` on
-      `server40` writes only
+      `server40` wrote only
       `sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_2gpu_shadow_from1500_to2100_20260613_0637`,
-      was observed at iteration `1774`, and both GPUs were at `100%`
+      was observed at iteration `1774`, and both GPUs were then at `100%`
       utilization. The one-GPU eval allocation `127350` was used for live
       smoke diagnostics and must not be counted as SFT training.
 - [x] A lightweight login-side request watcher was started in tmux
@@ -951,4 +1625,9 @@
       `TODO/cosmos3_300f_world_model/08_receding_closed_loop.md`: no one-shot
       300-step open-loop Cosmos execution, no sidecar/oracle simulator state,
       de-normalize only robot-action columns before live `env.step`, and
-      execute short `<=8`-step prefixes with real re-observation.
+      execute short `<=8`-step prefixes with real re-observation. The latest
+      2026-06-13 DP handoff correction also applies here: a passing live
+      continuability gate may choose frozen DP, but only for a short
+      reobserved chunk before returning to the same observe-decide loop. Do
+      not report any eval that runs `32`/`64`/`96` blind DP steps after one
+      Cosmos chunk as closed-loop method evidence.

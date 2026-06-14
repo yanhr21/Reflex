@@ -199,6 +199,14 @@ def main() -> int:
         "num_final_success": len(successes),
         "success_rate": (len(successes) / len(rows)) if rows else None,
         "dp_resume_horizon": args.dp_resume_horizon,
+        "controller_interface": "one_shot_cosmos_chunk_then_optional_frozen_dp_resume",
+        "method_evidence_allowed": False,
+        "missing_method_requirements": [
+            "no_online_cosmos_reprediction_after_live_reobservation",
+            "no_external_dynamic_target_replay_after_prefix_reset",
+            "no_continuability_guard_before_long_frozen_dp_resume",
+            "no_future_task_state_reconstruction_fed_to_dp_resume_interface",
+        ],
         "rows": rows,
         "boundary": (
             "Diagnostic panel summary from live simulator metrics and videos. "

@@ -1,0 +1,355 @@
+{
+  "boundary": "Read-only requirement-level audit of the user's closed-loop objective. This does not run simulation, rendering, training, or inference.",
+  "current_goal_achieved": false,
+  "failure_modes_json": "/public/home/yanhongru/ICLR2027/Reflex/docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_failure_modes.json",
+  "next_action": "Do not mark the objective complete. Continue with the clean-role/dense-receding repair path and approved overfit/full SFT before claiming Cosmos method effectiveness.",
+  "objective_gate_json": "/public/home/yanhongru/ICLR2027/Reflex/docs/world_model_task_rebinding/2026-06-14_iter2700_closed_loop_objective_gate.json",
+  "requirements": [
+    {
+      "conclusion": "Old iter2100 is correctly rejected as short-video negative evidence.",
+      "evidence": {
+        "duration_seconds_range": [
+          3.966666666666667,
+          4.366666666666666
+        ],
+        "frame_count_range": [
+          119,
+          131
+        ],
+        "root": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_panel10_corrected_iter2100_20260613_161006",
+        "video_count": 2
+      },
+      "id": "reject_old_short_iter2100",
+      "requirement": "The user-flagged old iter2100 videos must be treated as incomplete and not as current evidence.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "Current iter2700 artifacts satisfy the full-length video contract.",
+      "evidence": {
+        "current_roots_all_301": true,
+        "video_length_audit_current_video_count": 26,
+        "video_scan_rollup": {
+          "all_scanned_videos_have_301_frames": true,
+          "max_duration_seconds": 10.033333333333333,
+          "max_scanned_frame_count": 301,
+          "min_duration_seconds": 10.033333333333333,
+          "min_scanned_frame_count": 301,
+          "scan_error_count": 0,
+          "scanned_video_file_count": 26,
+          "video_file_count": 26
+        }
+      },
+      "id": "current_full_300_action_301_frame_videos",
+      "requirement": "Current closed-loop evidence must run the full 300 actions / 301 frames, about 10 seconds at 30 fps.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "Current moving samples use causal target-motion detector provenance.",
+      "evidence": {
+        "bad_samples": [],
+        "dynamic_sample_count": 9
+      },
+      "id": "causal_target_motion_detection",
+      "requirement": "The controller must not be told a manifest/manual target-motion frame; it must causally detect target motion.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "Cosmos is not a no-op in the current moving-target implementation artifacts.",
+      "evidence": {
+        "min_required_wm_active_frames": 8,
+        "wm_active_frames": [
+          {
+            "controller_frame_counts": {
+              "DP_SCAN_TARGET": 94,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 206
+            },
+            "sample_index": 1,
+            "scenario": "hole_late_constant",
+            "wm_active_frames": 206
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 156,
+              "DP_SCAN_TARGET": 104,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 40
+            },
+            "sample_index": 2,
+            "scenario": "hole_late_reverse",
+            "wm_active_frames": 40
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 136,
+              "DP_SCAN_TARGET": 132,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 32
+            },
+            "sample_index": 3,
+            "scenario": "hole_late_fast_shift",
+            "wm_active_frames": 32
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 158,
+              "DP_SCAN_TARGET": 86,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 56
+            },
+            "sample_index": 4,
+            "scenario": "hole_late_fast_shift",
+            "wm_active_frames": 56
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 8,
+              "DP_SCAN_TARGET": 80,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 212
+            },
+            "sample_index": 9,
+            "scenario": "hole_late_sine",
+            "wm_active_frames": 212
+          },
+          {
+            "controller_frame_counts": {
+              "DP_SCAN_TARGET": 96,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 204
+            },
+            "sample_index": 10,
+            "scenario": "hole_late_sine",
+            "wm_active_frames": 204
+          },
+          {
+            "controller_frame_counts": {
+              "DP_SCAN_TARGET": 98,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 202
+            },
+            "sample_index": 11,
+            "scenario": "hole_late_continuous_insert",
+            "wm_active_frames": 202
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 24,
+              "DP_SCAN_TARGET": 87,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 189
+            },
+            "sample_index": 12,
+            "scenario": "hole_late_move_stop",
+            "wm_active_frames": 189
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 8,
+              "DP_SCAN_TARGET": 72,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 220
+            },
+            "sample_index": 13,
+            "scenario": "hole_late_fast_shift",
+            "wm_active_frames": 220
+          }
+        ]
+      },
+      "id": "cosmos_takeover_after_motion",
+      "requirement": "For moving-target cases, Cosmos must actually take over for action chunks after target motion is detected.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "Current annotated timelines expose WM_ACTIVE and DP modes for moving samples.",
+      "evidence": {
+        "annotated_wm_active_frames": [
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 206,
+            "sample_index": 1,
+            "scenario": "hole_late_constant"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 40,
+            "sample_index": 2,
+            "scenario": "hole_late_reverse"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 32,
+            "sample_index": 3,
+            "scenario": "hole_late_fast_shift"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 56,
+            "sample_index": 4,
+            "scenario": "hole_late_fast_shift"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 212,
+            "sample_index": 9,
+            "scenario": "hole_late_sine"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 204,
+            "sample_index": 10,
+            "scenario": "hole_late_sine"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 202,
+            "sample_index": 11,
+            "scenario": "hole_late_continuous_insert"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 189,
+            "sample_index": 12,
+            "scenario": "hole_late_move_stop"
+          },
+          {
+            "annotated_timeline_length": 301,
+            "annotated_wm_active_frames": 220,
+            "sample_index": 13,
+            "scenario": "hole_late_fast_shift"
+          }
+        ]
+      },
+      "id": "explicit_takeover_annotation",
+      "requirement": "Videos must explicitly mark when Cosmos is active and when DP is active.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "Controller-selection behavior is correct for the no-motion witness only if it is produced by the same detector/controller path; final DP task success remains a separate performance issue.",
+      "evidence": {
+        "controller_frame_counts": {
+          "DP_SCAN_TARGET": 300,
+          "INIT_OBS": 1
+        },
+        "final_success": false,
+        "no_motion_witness_summary_path": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745/live_receding_full300_unified_iter2700_static_none_fix1_20260613_alloc127559/live_receding_loop_summary.json",
+        "prefix_selection_mode": "target_motion_detector_never_triggered_after_terminal_completion",
+        "prefix_selection_triggered": false,
+        "pretrigger_control_mode": "frozen_dp_until_target_motion",
+        "wm_active_frame_count": 0
+      },
+      "id": "static_no_motion_same_detector_dp_only",
+      "requirement": "A no-motion witness must use the same frozen-DP-until-target-motion controller and detector; if the detector never fires, the controller should remain DP-only.",
+      "status": "passed"
+    },
+    {
+      "conclusion": "The handoff mechanism exists and can succeed on some samples, but current hard failures show it is not reliable enough for method evidence.",
+      "evidence": {
+        "dynamic_samples_with_dp_handoff": [
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 156,
+              "DP_SCAN_TARGET": 104,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 40
+            },
+            "final_success": true,
+            "sample_index": 2,
+            "scenario": "hole_late_reverse"
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 136,
+              "DP_SCAN_TARGET": 132,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 32
+            },
+            "final_success": false,
+            "sample_index": 3,
+            "scenario": "hole_late_fast_shift"
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 158,
+              "DP_SCAN_TARGET": 86,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 56
+            },
+            "final_success": true,
+            "sample_index": 4,
+            "scenario": "hole_late_fast_shift"
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 8,
+              "DP_SCAN_TARGET": 80,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 212
+            },
+            "final_success": false,
+            "sample_index": 9,
+            "scenario": "hole_late_sine"
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 24,
+              "DP_SCAN_TARGET": 87,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 189
+            },
+            "final_success": false,
+            "sample_index": 12,
+            "scenario": "hole_late_move_stop"
+          },
+          {
+            "controller_frame_counts": {
+              "DP_HANDOFF": 8,
+              "DP_SCAN_TARGET": 72,
+              "INIT_OBS": 1,
+              "WM_ACTIVE": 220
+            },
+            "final_success": false,
+            "sample_index": 13,
+            "scenario": "hole_late_fast_shift"
+          }
+        ],
+        "failure_mode_gate_blocks": {
+          "grasped": 18,
+          "hole_speed": 9,
+          "rel_x_min": 36,
+          "rel_y_abs": 203,
+          "rel_z_abs": 195
+        }
+      },
+      "id": "dp_handoff_available_but_not_proven_reliable",
+      "requirement": "After Cosmos brings the peg near the moved hole, frozen DP may resume through a real-state continuability gate.",
+      "status": "partial"
+    },
+    {
+      "conclusion": "Current iter2700 is not successful method evidence: val underperforms pure DP and hard pure-DP failures are only rescued on 1/6 samples.",
+      "evidence": {
+        "hard_case_success_fraction": 0.16666666666666666,
+        "hard_cosmos_on_pure_dp_failures": "1/6",
+        "hard_matched_pure_dp_success": "0/6",
+        "method_effectiveness_failures": [
+          "val_cosmos_underperforms_same_source_pure_dp:1/3<pure_dp:3/3",
+          "hard_case_success_fraction_below_minimum:1/6<min_fraction:0.5",
+          "hard_case_not_broadly_reliable:1/6"
+        ],
+        "min_hard_case_success_fraction": 0.5,
+        "primary_current_failure": "direct_raw_cosmos_action_rebind_and_dp_continuability_are_unreliable",
+        "val_cosmos": "1/3",
+        "val_pure_dp": "3/3"
+      },
+      "id": "method_effectiveness_against_pure_dp",
+      "requirement": "Cosmos closed-loop should be useful on large-motion dynamic cases, not merely run; compare against full pure DP.",
+      "status": "failed"
+    }
+  ],
+  "status_counts": {
+    "failed": 1,
+    "partial": 1,
+    "passed": 6
+  },
+  "video_length_audit_json": "/public/home/yanhongru/ICLR2027/Reflex/docs/world_model_task_rebinding/2026-06-14_iter2100_vs_iter2700_video_length_audit.json"
+}

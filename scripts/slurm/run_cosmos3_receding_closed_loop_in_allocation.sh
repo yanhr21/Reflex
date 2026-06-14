@@ -46,9 +46,21 @@ ROBOT_ACTION_DIM="${ROBOT_ACTION_DIM:-7}"
 CAPTURE_LIVE_VIDEO="${CAPTURE_LIVE_VIDEO:-true}"
 LIVE_VIDEO_FPS="${LIVE_VIDEO_FPS:-10}"
 CLIP_LIVE_ACTIONS="${CLIP_LIVE_ACTIONS:-true}"
+ALLOW_LONG_DP_DIAGNOSTIC="${ALLOW_LONG_DP_DIAGNOSTIC:-false}"
+ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC="${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC:-false}"
 
 main() {
   cd "${ROOT}"
+  if [[ "${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC}" != "true" ]]; then
+    cat >&2 <<'EOF'
+refusing_old_oneshot_closed_loop=true
+reason=This wrapper calls run_cosmos3_receding_closed_loop.py, the old one-shot Cosmos chunk plus optional DP resume diagnostic, not the corrected full-300 live-receding method.
+override_for_non_method_diagnostic=ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC=true
+required_method_wrapper=scripts/slurm/run_cosmos3_live_receding_loop_in_allocation.sh
+EOF
+    exit 43
+  fi
+
   mkdir -p "${OUTPUT_ROOT}"
   {
     echo "timestamp=$(date -Is)"
@@ -68,6 +80,8 @@ main() {
     echo "action_preview_sample_index=${ACTION_PREVIEW_SAMPLE_INDEX}"
     echo "action_exec_horizon=${ACTION_EXEC_HORIZON}"
     echo "dp_resume_horizon=${DP_RESUME_HORIZON}"
+    echo "allow_long_dp_diagnostic=${ALLOW_LONG_DP_DIAGNOSTIC}"
+    echo "allow_old_oneshot_closed_loop_diagnostic=${ALLOW_OLD_ONESHOT_CLOSED_LOOP_DIAGNOSTIC}"
     echo "capture_live_video=${CAPTURE_LIVE_VIDEO}"
     echo "live_video_fps=${LIVE_VIDEO_FPS}"
     echo "clip_live_actions=${CLIP_LIVE_ACTIONS}"
@@ -84,6 +98,11 @@ main() {
     bool_args+=(--clip-live-actions)
   else
     bool_args+=(--no-clip-live-actions)
+  fi
+  if [[ "${ALLOW_LONG_DP_DIAGNOSTIC}" == "true" ]]; then
+    bool_args+=(--allow-long-dp-diagnostic)
+  else
+    bool_args+=(--no-allow-long-dp-diagnostic)
   fi
 
   "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/run_cosmos3_receding_closed_loop.py" \

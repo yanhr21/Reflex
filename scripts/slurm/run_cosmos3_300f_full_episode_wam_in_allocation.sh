@@ -54,6 +54,7 @@ LIBFFI_COMPAT_DIR="${LIBFFI_COMPAT_DIR:-${COSMOS_VENV}/lib_compat}"
 TOTAL_VIDEO_FRAMES="${TOTAL_VIDEO_FRAMES:-301}"
 TOTAL_ACTION_STEPS="${TOTAL_ACTION_STEPS:-300}"
 EXPECTED_SOURCE_EPISODES="${EXPECTED_SOURCE_EPISODES:-1000}"
+MAX_RECORDS="${MAX_RECORDS:-0}"
 CONDITIONING_LATENT_FRAMES="${CONDITIONING_LATENT_FRAMES:-8}"
 TEMPORAL_COMPRESSION_FACTOR="${TEMPORAL_COMPRESSION_FACTOR:-4}"
 TEMPORAL_INTERVAL_MODE="${TEMPORAL_INTERVAL_MODE:-force_one}"
@@ -61,7 +62,23 @@ ACTION_CONDITIONED_SFT="${ACTION_CONDITIONED_SFT:-true}"
 REQUIRE_STATE_TARGETS="${REQUIRE_STATE_TARGETS:-true}"
 STRICT_FULL_PREFLIGHT="${STRICT_FULL_PREFLIGHT:-true}"
 SIDECAR_TARGET_MODE="${SIDECAR_TARGET_MODE:-future_aligned_state}"
+PREFIX_ROLE_SOURCE="${PREFIX_ROLE_SOURCE:-sampled}"
+DENSE_RECEDING_PREFIX_STRIDE="${DENSE_RECEDING_PREFIX_STRIDE:-0}"
 ROLE_WEIGHT_CONFIG="${ROLE_WEIGHT_CONFIG:-}"
+LATE_REBIND_WEIGHT="${LATE_REBIND_WEIGHT:-1}"
+LATE_REBIND_ROLES="${LATE_REBIND_ROLES:-target_motion_observed,target_post_motion,insert_resume}"
+LATE_REBIND_MIN_ABS_X="${LATE_REBIND_MIN_ABS_X:-0.05}"
+LATE_REBIND_MIN_ABS_Y="${LATE_REBIND_MIN_ABS_Y:-0.01}"
+LATE_REBIND_MIN_ABS_Z="${LATE_REBIND_MIN_ABS_Z:-0.004}"
+MIN_LATE_REBIND_CANDIDATES="${MIN_LATE_REBIND_CANDIDATES:-0}"
+RUN_LIVE_QUERY_COVERAGE_AUDIT="${RUN_LIVE_QUERY_COVERAGE_AUDIT:-false}"
+LIVE_QUERY_COVERAGE_SUMMARIES="${LIVE_QUERY_COVERAGE_SUMMARIES:-}"
+LIVE_QUERY_COVERAGE_PREFIX_TOLERANCE="${LIVE_QUERY_COVERAGE_PREFIX_TOLERANCE:-16}"
+LIVE_QUERY_COVERAGE_REL_L2_TOLERANCE="${LIVE_QUERY_COVERAGE_REL_L2_TOLERANCE:-0.05}"
+LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE="${LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE:-0.03}"
+LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT="${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT:-0}"
+LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION="${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION:-0.0}"
+CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON="${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON:-}"
 FORCE_EXPORT="${FORCE_EXPORT:-false}"
 RUN_SFT="${RUN_SFT:-true}"
 
@@ -171,6 +188,7 @@ write_manifest() {
     echo "total_video_frames=${TOTAL_VIDEO_FRAMES}"
     echo "total_action_steps=${TOTAL_ACTION_STEPS}"
     echo "expected_source_episodes=${EXPECTED_SOURCE_EPISODES}"
+    echo "max_records=${MAX_RECORDS}"
     echo "action_conditioned_sft=${ACTION_CONDITIONED_SFT}"
     echo "require_state_targets=${REQUIRE_STATE_TARGETS}"
     echo "strict_full_preflight=${STRICT_FULL_PREFLIGHT}"
@@ -195,7 +213,23 @@ write_manifest() {
     echo "allow_non_fix1_action_recipe_diagnostic=${ALLOW_NON_FIX1_ACTION_RECIPE_DIAGNOSTIC}"
     echo "conditioned_actions=history_actions_before_prefix_only"
     echo "sidecar_target_mode=${SIDECAR_TARGET_MODE}"
+    echo "prefix_role_source=${PREFIX_ROLE_SOURCE}"
+    echo "dense_receding_prefix_stride=${DENSE_RECEDING_PREFIX_STRIDE}"
     echo "role_weight_config=${ROLE_WEIGHT_CONFIG}"
+    echo "late_rebind_weight=${LATE_REBIND_WEIGHT}"
+    echo "late_rebind_roles=${LATE_REBIND_ROLES}"
+    echo "late_rebind_min_abs_x=${LATE_REBIND_MIN_ABS_X}"
+    echo "late_rebind_min_abs_y=${LATE_REBIND_MIN_ABS_Y}"
+    echo "late_rebind_min_abs_z=${LATE_REBIND_MIN_ABS_Z}"
+    echo "min_late_rebind_candidates=${MIN_LATE_REBIND_CANDIDATES}"
+    echo "run_live_query_coverage_audit=${RUN_LIVE_QUERY_COVERAGE_AUDIT}"
+    echo "live_query_coverage_summaries=${LIVE_QUERY_COVERAGE_SUMMARIES}"
+    echo "live_query_coverage_prefix_tolerance=${LIVE_QUERY_COVERAGE_PREFIX_TOLERANCE}"
+    echo "live_query_coverage_rel_l2_tolerance=${LIVE_QUERY_COVERAGE_REL_L2_TOLERANCE}"
+    echo "live_query_coverage_rel_yz_tolerance=${LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE}"
+    echo "live_query_coverage_max_undercovered_count=${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT}"
+    echo "live_query_coverage_max_undercovered_fraction=${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION}"
+    echo "clean_dense_preflight_diagnostic_not_ready_reason=${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON}"
     echo "visual_input=RGB only; depth is not used"
     echo "data_contract=301 RGB/state frames and 300 action/state rows per row; no 128-frame sampling; no 129-frame sliced t2w window; no min(pred,ref) metrics"
     echo "physical_reason=learn when the target hole starts moving, predict its path/final task frame, and jointly predict executable robot/peg/contact continuation under full-episode supervision"
@@ -328,16 +362,19 @@ export_conditions() {
       --total-video-frames '${TOTAL_VIDEO_FRAMES}' \
       --total-action-steps '${TOTAL_ACTION_STEPS}' \
       --require-video-frames '${TOTAL_VIDEO_FRAMES}' \
+      --max-records '${MAX_RECORDS}' \
       --prefix-policy multi_mode \
       --action-condition-mode joint_policy_history_action \
       --sidecar-target-mode '${SIDECAR_TARGET_MODE}' \
+      --prefix-role-source '${PREFIX_ROLE_SOURCE}' \
+      --dense-receding-prefix-stride '${DENSE_RECEDING_PREFIX_STRIDE}' \
       --temporal-compression-factor '${TEMPORAL_COMPRESSION_FACTOR}' \
       --progress-every 10
   " 2>&1 | tee "${OUTPUT_ROOT}/condition_export.log"
 }
 
 apply_role_weights() {
-  if [[ -z "${ROLE_WEIGHT_CONFIG}" ]]; then
+  if [[ -z "${ROLE_WEIGHT_CONFIG}" && "${LATE_REBIND_WEIGHT}" == "1" ]]; then
     echo "role_weighting=disabled" | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
     return
   fi
@@ -349,6 +386,11 @@ apply_role_weights() {
       --input-jsonl "${CONDITION_ROOT}/train/video_action_dataset_file.jsonl" \
       --output-jsonl "${weighted_train_jsonl}" \
       --role-weights "${ROLE_WEIGHT_CONFIG}" \
+      --late-rebind-weight "${LATE_REBIND_WEIGHT}" \
+      --late-rebind-roles "${LATE_REBIND_ROLES}" \
+      --late-rebind-min-abs-x "${LATE_REBIND_MIN_ABS_X}" \
+      --late-rebind-min-abs-y "${LATE_REBIND_MIN_ABS_Y}" \
+      --late-rebind-min-abs-z "${LATE_REBIND_MIN_ABS_Z}" \
       --manifest-out "${CONDITION_ROOT}/train/role_weighted_manifest.json"
   ) 2>&1 | tee "${OUTPUT_ROOT}/role_weighting.log"
   TRAIN_JSONL="${weighted_train_jsonl}"
@@ -384,6 +426,56 @@ audit_conditions() {
       --expected-action-steps '${TOTAL_ACTION_STEPS}' \
       --expected-action-dim 32 \
       --strict
+    '${ROOT}/.venv/bin/python' '${ROOT}/scripts/world_model/audit_cosmos3_receding_training_distribution.py' \
+      --condition-root '${CONDITION_ROOT}' \
+      --output-json '${OUTPUT_ROOT}/receding_training_distribution_audit.json' \
+      --prefix-role-source '${PREFIX_ROLE_SOURCE}' \
+      --require-no-condition-mask-errors \
+      --min-late-rebind-candidates '${MIN_LATE_REBIND_CANDIDATES}'
+    live_query_coverage_flag=()
+    if [[ '${RUN_LIVE_QUERY_COVERAGE_AUDIT}' == 'true' ]]; then
+      live_query_coverage_args=()
+      IFS=',' read -r -a live_query_coverage_summaries <<< '${LIVE_QUERY_COVERAGE_SUMMARIES}'
+      for live_summary in \"\${live_query_coverage_summaries[@]}\"; do
+        [[ -n \"\${live_summary}\" ]] && live_query_coverage_args+=(--live-summary \"\${live_summary}\")
+      done
+      if [[ \"\${#live_query_coverage_args[@]}\" -eq 0 ]]; then
+        echo 'missing_live_query_coverage_summaries=true' >&2
+        exit 47
+      fi
+      '${ROOT}/.venv/bin/python' '${ROOT}/scripts/world_model/audit_cosmos3_live_query_training_coverage.py' \
+        --condition-root '${CONDITION_ROOT}' \
+        \"\${live_query_coverage_args[@]}\" \
+        --prefix-tolerance '${LIVE_QUERY_COVERAGE_PREFIX_TOLERANCE}' \
+        --rel-l2-tolerance '${LIVE_QUERY_COVERAGE_REL_L2_TOLERANCE}' \
+        --rel-yz-tolerance '${LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE}' \
+        --output-json '${OUTPUT_ROOT}/live_query_training_coverage_audit.json' \
+        --output-md '${OUTPUT_ROOT}/live_query_training_coverage_audit.md'
+      live_query_coverage_flag+=(--live-query-coverage-audit-json '${OUTPUT_ROOT}/live_query_training_coverage_audit.json')
+      live_query_coverage_flag+=(--max-live-query-undercovered-count '${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT}')
+      live_query_coverage_flag+=(--max-live-query-undercovered-fraction '${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION}')
+    fi
+    if [[ '${PREFIX_ROLE_SOURCE}' == 'physical_mode' || '${DENSE_RECEDING_PREFIX_STRIDE}' != '0' ]]; then
+      weighted_flag=()
+      if [[ '${LATE_REBIND_WEIGHT}' != '1' || -n '${ROLE_WEIGHT_CONFIG}' ]]; then
+        weighted_flag+=(--require-weighted-train-jsonl)
+      fi
+      diagnostic_not_ready_flag=()
+      if [[ -n '${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON}' ]]; then
+        diagnostic_not_ready_flag+=(--diagnostic-not-ready-reason '${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON}')
+      fi
+      '${ROOT}/.venv/bin/python' '${ROOT}/scripts/world_model/summarize_cosmos3_clean_dense_preflight.py' \
+        --condition-root '${CONDITION_ROOT}' \
+        --output-root '${OUTPUT_ROOT}' \
+        --expected-source-episodes '${EXPECTED_SOURCE_EPISODES}' \
+        --expected-video-frames '${TOTAL_VIDEO_FRAMES}' \
+        --expected-action-steps '${TOTAL_ACTION_STEPS}' \
+        --expected-prefix-role-source '${PREFIX_ROLE_SOURCE}' \
+        --min-late-rebind-candidates '${MIN_LATE_REBIND_CANDIDATES}' \
+        \"\${weighted_flag[@]}\" \
+        \"\${live_query_coverage_flag[@]}\" \
+        \"\${diagnostic_not_ready_flag[@]}\"
+    fi
   " 2>&1 | tee "${OUTPUT_ROOT}/condition_audit.log"
 }
 

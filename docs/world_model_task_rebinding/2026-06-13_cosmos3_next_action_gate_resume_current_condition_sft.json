@@ -1,0 +1,15 @@
+{
+  "action": "resume_current_condition_sft",
+  "active_matching_process_count": 0,
+  "allowed": false,
+  "boundary": "This gate is a safety check over existing status artifacts only. It does not start Slurm jobs, training, rendering, inference, or eval.",
+  "description": "Resume SFT from the current condition root/checkpoint. This is disallowed after corrected live closed-loop failure unless a future status file explicitly marks it safe.",
+  "latest_checkpoint": "iter_000002700",
+  "latest_eval": "eval_full_episode_wam_iter_000002700",
+  "latest_eval_closed_loop_allowed": false,
+  "reasons": [
+    "current_condition_sft_marked_unsafe_without_user_approval",
+    "latest_generated_eval_controller_blocked"
+  ],
+  "status_generated_at": "2026-06-13T18:48:56.746973+08:00"
+}

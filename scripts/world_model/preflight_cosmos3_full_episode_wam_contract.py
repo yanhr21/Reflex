@@ -73,6 +73,9 @@ def _check_rows(rows: list[dict[str, Any]], jsonl_path: Path, args: argparse.Nam
     source_uuids = set()
     scenarios = Counter()
     prefix_roles = Counter()
+    physical_modes = Counter()
+    sampled_prefix_roles = Counter()
+    role_mode_counts = Counter()
     prefixes = []
     failures = []
     video_frame_cache: dict[Path, int] = {}
@@ -85,6 +88,15 @@ def _check_rows(rows: list[dict[str, Any]], jsonl_path: Path, args: argparse.Nam
         source_uuids.add(source_uuid)
         scenarios[str((row.get("metadata") or {}).get("scenario", row.get("scenario", "unknown")))] += 1
         prefix_roles[str(row.get("prefix_role", "unknown"))] += 1
+        metadata = row.get("metadata") or {}
+        payload = metadata.get("prefix_causal_state") if isinstance(metadata, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        physical_mode = str(row.get("physical_mode") or payload.get("mode", "unknown"))
+        sampled_prefix_role = str(row.get("sampled_prefix_role") or payload.get("sampled_prefix_role") or row.get("prefix_role", "unknown"))
+        physical_modes[physical_mode] += 1
+        sampled_prefix_roles[sampled_prefix_role] += 1
+        role_mode_counts[f"{row.get('prefix_role', 'unknown')}|{physical_mode}"] += 1
 
         def fail(reason: str) -> None:
             failures.append({"uuid": uuid, "reason": reason})
@@ -201,6 +213,12 @@ def _check_rows(rows: list[dict[str, Any]], jsonl_path: Path, args: argparse.Nam
         "unique_source_episodes": len(source_uuids),
         "scenario_counts": dict(sorted(scenarios.items())),
         "prefix_role_counts": dict(sorted(prefix_roles.items())),
+        "physical_mode_counts": dict(sorted(physical_modes.items())),
+        "sampled_prefix_role_counts": dict(sorted(sampled_prefix_roles.items())),
+        "prefix_role_mode_counts": dict(sorted(role_mode_counts.items())),
+        "prefix_role_mode_mismatch_count": int(
+            sum(count for key, count in role_mode_counts.items() if key.split("|", 1)[0] != key.split("|", 1)[1])
+        ),
         "prefix_frame_count_min": min(prefixes) if prefixes else None,
         "prefix_frame_count_max": max(prefixes) if prefixes else None,
         "failures": failures[:100],
