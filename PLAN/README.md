@@ -11,6 +11,16 @@ This is the only active plan for Cosmos3 training and testing. The previous
 
 - `PLAN/_backup_world_model_task_rebinding_20260609_before_cosmos3_300f_reset/`
 
+## Proposed Method Branch
+
+- `PLAN/cosmos3_lowfreq_wm_executor/`
+
+This is a new, separate proposal after the 2026-06-14 finding that the
+full-length iter2700 closed loop satisfies the implementation contract but is
+not method-effective. It separates low-frequency Cosmos task-world prediction
+from high-frequency robot execution and must not be mixed with the old
+direct raw-Cosmos-action checkpoint claims.
+
 ## Current Boundary
 
 - Keep the approved full1000 ManiSkill default-view RGB dataset.

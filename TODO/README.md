@@ -10,6 +10,15 @@ The previous `TODO/world_model_task_rebinding/` directory was moved to:
 
 - `TODO/_backup_world_model_task_rebinding_20260609_before_cosmos3_300f_reset/`
 
+## Proposed Method Branch
+
+- `TODO/cosmos3_lowfreq_wm_executor/`
+
+This branch records the new low-frequency Cosmos world-model plus
+high-frequency executor direction. It is separate from the current direct
+raw-Cosmos-action TODOs and should only be advanced after explicit user
+approval for the new repair path.
+
 ## Current Override
 
 The 2026-06-09 stop gate was superseded by later 2026-06-12 user instructions:
