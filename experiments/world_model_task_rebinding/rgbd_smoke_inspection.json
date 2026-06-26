@@ -1,0 +1,1306 @@
+{
+  "args": {
+    "output_json": "experiments/world_model_task_rebinding/rgbd_smoke_inspection.json",
+    "output_md": "docs/world_model_task_rebinding/2026-06-02_rgbd_dataset_inspection.md",
+    "paths": [
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_constant_seed12/hole_constant_seed12_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_move_stop_seed1/hole_move_stop_seed1_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_reverse_seed13/hole_reverse_seed13_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/none_seed11/none_seed11_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/peg_disturb_seed14/peg_disturb_seed14_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/peg_drop_seed15/peg_drop_seed15_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic_bounded/hole_constant_seed22/hole_constant_seed22_n1.rgbd.h5",
+      "experiments/world_model_task_rebinding/smoke_rgbd_dynamic_bounded/hole_reverse_seed23/hole_reverse_seed23_n1.rgbd.h5"
+    ],
+    "required_cameras": [
+      "base_camera",
+      "hand_camera"
+    ]
+  },
+  "files": [
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_constant_seed12/hole_constant_seed12_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.8297271728515625,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 62.74858093261719,
+                  "u_min": 61.846370697021484,
+                  "v_max": 54.043052673339844,
+                  "v_min": 49.27720260620117
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.75,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 66.34345245361328,
+                  "u_min": 58.77313232421875,
+                  "v_max": 140.54566955566406,
+                  "v_min": 49.54941177368164
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.875,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 68.06389617919922,
+                  "u_min": 39.43616485595703,
+                  "v_max": 205.1294403076172,
+                  "v_min": 44.9069938659668
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 47.92844772338867,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 0.9375,
+                  "u_max": 815.1925659179688,
+                  "u_min": -170.56382751464844,
+                  "v_max": -36.0244026184082,
+                  "v_min": -1824.831298828125
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.9375,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 83.28983306884766,
+                  "u_min": 54.373146057128906,
+                  "v_max": 148.88748168945312,
+                  "v_min": 56.038902282714844
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98714447021484,
+                  "u_min": 82.9870376586914,
+                  "v_max": 108.14607238769531,
+                  "v_min": 108.1457748413086
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 60.713172912597656,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 12,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_move_stop_seed1/hole_move_stop_seed1_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                12,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.8250885009765625,
+              "depth_shape": [
+                12,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                12,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                12,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 12,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 71.63581085205078,
+                  "u_min": 70.22088623046875,
+                  "v_max": 55.84031677246094,
+                  "v_min": 53.39923095703125
+                },
+                "peg_pose": {
+                  "count": 12,
+                  "in_image_rate": 0.75,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 90.12207794189453,
+                  "u_min": 71.00997924804688,
+                  "v_max": 131.0455780029297,
+                  "v_min": 57.05531692504883
+                },
+                "tcp_pose": {
+                  "count": 12,
+                  "in_image_rate": 0.8333333333333334,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 77.34138488769531,
+                  "u_min": 63.13484573364258,
+                  "v_max": 162.29934692382812,
+                  "v_min": 54.73683166503906
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 54.533634185791016,
+              "rgb_shape": [
+                12,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                12,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                12,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                12,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                12,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 12,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 109.80043029785156,
+                  "u_min": -7483.65966796875,
+                  "v_max": -70.62154388427734,
+                  "v_min": -5926.91748046875
+                },
+                "peg_pose": {
+                  "count": 12,
+                  "in_image_rate": 0.9166666666666666,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 89.91899108886719,
+                  "u_min": 80.9128646850586,
+                  "v_max": 137.419921875,
+                  "v_min": 47.00031280517578
+                },
+                "tcp_pose": {
+                  "count": 12,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98711395263672,
+                  "u_min": 82.9870376586914,
+                  "v_max": 108.14595794677734,
+                  "v_min": 108.1458969116211
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 60.93690490722656,
+              "rgb_shape": [
+                12,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 12,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/hole_reverse_seed13/hole_reverse_seed13_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.7730941772460938,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.6875,
+                  "positive_depth_rate": 0.75,
+                  "u_max": 61.76456832885742,
+                  "u_min": -489.537109375,
+                  "v_max": 1108.0435791015625,
+                  "v_min": 46.96913528442383
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.5625,
+                  "positive_depth_rate": 0.625,
+                  "u_max": 49.542850494384766,
+                  "u_min": -493.0284118652344,
+                  "v_max": 189.76185607910156,
+                  "v_min": 48.39248275756836
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.5,
+                  "positive_depth_rate": 0.5625,
+                  "u_max": 66.5223388671875,
+                  "u_min": -12.308361053466797,
+                  "v_max": 120.22018432617188,
+                  "v_min": 46.250328063964844
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 64.59083557128906,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 0.8125,
+                  "u_max": 270.5297546386719,
+                  "u_min": -448.0547790527344,
+                  "v_max": 585.16650390625,
+                  "v_min": -1624.615966796875
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 83.3765869140625,
+                  "u_min": 43.876007080078125,
+                  "v_max": 120.57538604736328,
+                  "v_min": 38.67628479003906
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98712921142578,
+                  "u_min": 82.98702239990234,
+                  "v_max": 108.1460189819336,
+                  "v_min": 108.14572143554688
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 59.828941345214844,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/none_seed11/none_seed11_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.7739181518554688,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 66.29522705078125,
+                  "u_min": 66.29522705078125,
+                  "v_max": 52.598915100097656,
+                  "v_min": 52.598915100097656
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 77.33381652832031,
+                  "u_min": 41.18689727783203,
+                  "v_max": 105.9795913696289,
+                  "v_min": 54.37567901611328
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.14666748046875,
+                  "u_min": 30.271421432495117,
+                  "v_max": 126.36702728271484,
+                  "v_min": 46.57322311401367
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 63.42097473144531,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 0.9375,
+                  "u_max": 810.5302124023438,
+                  "u_min": 78.99054718017578,
+                  "v_max": -43.87763595581055,
+                  "v_min": -1637.468994140625
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 84.39202880859375,
+                  "u_min": 49.911163330078125,
+                  "v_max": 114.09117126464844,
+                  "v_min": 54.494205474853516
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98709869384766,
+                  "u_min": 82.98699951171875,
+                  "v_max": 108.1460189819336,
+                  "v_min": 108.14588928222656
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 58.27246856689453,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/peg_disturb_seed14/peg_disturb_seed14_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.860595703125,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 63.53395080566406,
+                  "u_min": 63.53395080566406,
+                  "v_max": 59.945682525634766,
+                  "v_min": 59.945682525634766
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.625,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 79.49703216552734,
+                  "u_min": 58.6850700378418,
+                  "v_max": 257.3641662597656,
+                  "v_min": 69.47555541992188
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.75,
+                  "positive_depth_rate": 0.9375,
+                  "u_max": 318.58062744140625,
+                  "u_min": 57.87753677368164,
+                  "v_max": 1038.87451171875,
+                  "v_min": 50.74928665161133
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 49.55205535888672,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0625,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 850.6223754882812,
+                  "u_min": 73.69406127929688,
+                  "v_max": 6.704294204711914,
+                  "v_min": -916.1603393554688
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.5625,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 94.72747039794922,
+                  "u_min": 70.03850555419922,
+                  "v_max": 177.01976013183594,
+                  "v_min": 52.63888931274414
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98709106445312,
+                  "u_min": 82.98704528808594,
+                  "v_max": 108.14595794677734,
+                  "v_min": 108.1458511352539
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 57.492431640625,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic/peg_drop_seed15/peg_drop_seed15_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.9165573120117188,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 67.80567932128906,
+                  "u_min": 67.80567932128906,
+                  "v_max": 53.367610931396484,
+                  "v_min": 53.367610931396484
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.4375,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 66.36614990234375,
+                  "u_min": 43.64665222167969,
+                  "v_max": 142.9509735107422,
+                  "v_min": 58.5556640625
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.75,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 78.5431900024414,
+                  "u_min": 52.47152328491211,
+                  "v_max": 175.39447021484375,
+                  "v_min": 47.979496002197266
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 46.18448257446289,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 0.8125,
+                  "u_max": 1234.8798828125,
+                  "u_min": 53.66864013671875,
+                  "v_max": -50.58171463012695,
+                  "v_min": -653.1893920898438
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.75,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 88.60386657714844,
+                  "u_min": 50.81741714477539,
+                  "v_max": 139.22434997558594,
+                  "v_min": 44.2352409362793
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98712921142578,
+                  "u_min": 82.98703002929688,
+                  "v_max": 108.14598083496094,
+                  "v_min": 108.14586639404297
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 55.61213684082031,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic_bounded/hole_constant_seed22/hole_constant_seed22_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.7766265869140625,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 62.208030700683594,
+                  "u_min": 61.668975830078125,
+                  "v_max": 50.61457824707031,
+                  "v_min": 48.77662658691406
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 66.82521057128906,
+                  "u_min": 56.598876953125,
+                  "v_max": 89.97907257080078,
+                  "v_min": 51.615543365478516
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 68.66476440429688,
+                  "u_min": 58.9468994140625,
+                  "v_max": 101.01490783691406,
+                  "v_min": 49.167964935302734
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 62.272010803222656,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 0.9375,
+                  "u_max": 910.6135864257812,
+                  "u_min": 51.9411735534668,
+                  "v_max": -80.75144958496094,
+                  "v_min": -2082.1435546875
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.5625,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 85.17952728271484,
+                  "u_min": 63.47214126586914,
+                  "v_max": 131.40786743164062,
+                  "v_min": 54.30717086791992
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98719787597656,
+                  "u_min": 82.98700714111328,
+                  "v_max": 108.14595031738281,
+                  "v_min": 108.14586639404297
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 60.147613525390625,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "num_frames": 16,
+      "num_trajectories": 1,
+      "path": "experiments/world_model_task_rebinding/smoke_rgbd_dynamic_bounded/hole_reverse_seed23/hole_reverse_seed23_n1.rgbd.h5",
+      "trajectories": [
+        {
+          "action_count": 300,
+          "cameras": [
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "base_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 0.8502197265625,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 57.51008605957031,
+                  "u_min": 54.85618209838867,
+                  "v_max": 60.757911682128906,
+                  "v_min": 55.50695037841797
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.6875,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 57.332122802734375,
+                  "u_min": 33.508609771728516,
+                  "v_max": 129.3060302734375,
+                  "v_min": 61.289302825927734
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.875,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 84.46159362792969,
+                  "u_min": 26.677268981933594,
+                  "v_max": 157.47476196289062,
+                  "v_min": 47.92607879638672
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 60.282989501953125,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            },
+            {
+              "cam2world_shape": [
+                16,
+                4,
+                4
+              ],
+              "camera": "hand_camera",
+              "depth_dtype": "int16",
+              "depth_sample_finite_rate": 1.0,
+              "depth_sample_positive_rate": 1.0,
+              "depth_shape": [
+                16,
+                128,
+                128,
+                1
+              ],
+              "extrinsic_shape": [
+                16,
+                3,
+                4
+              ],
+              "intrinsic_shape": [
+                16,
+                3,
+                3
+              ],
+              "projection": {
+                "hole_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 4894.8291015625,
+                  "u_min": 55.053401947021484,
+                  "v_max": -14.294495582580566,
+                  "v_min": -3992.00732421875
+                },
+                "peg_pose": {
+                  "count": 16,
+                  "in_image_rate": 0.875,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 83.75755310058594,
+                  "u_min": 55.796363830566406,
+                  "v_max": 149.54978942871094,
+                  "v_min": 49.26963806152344
+                },
+                "tcp_pose": {
+                  "count": 16,
+                  "in_image_rate": 1.0,
+                  "positive_depth_rate": 1.0,
+                  "u_max": 82.98709869384766,
+                  "u_min": 82.9870376586914,
+                  "v_max": 108.1459732055664,
+                  "v_min": 108.14590454101562
+                }
+              },
+              "rgb_dtype": "uint8",
+              "rgb_sample_mean_frame_std": 59.590293884277344,
+              "rgb_shape": [
+                16,
+                128,
+                128,
+                3
+              ],
+              "warnings": []
+            }
+          ],
+          "frame_count": 16,
+          "slot_keys": [
+            "grasped",
+            "hole_pose",
+            "hole_radius",
+            "hole_velocity_step",
+            "inserted",
+            "peg_head_at_hole",
+            "peg_pose",
+            "qpos",
+            "qvel",
+            "tcp_pose"
+          ],
+          "source_frame_first": 0,
+          "source_frame_last": 300,
+          "trajectory": "traj_0",
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    }
+  ],
+  "num_files": 8,
+  "num_frames": 124,
+  "num_trajectories": 8,
+  "num_warnings": 0
+}
