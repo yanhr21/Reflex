@@ -19,6 +19,25 @@ high-frequency executor direction. It is separate from the current direct
 raw-Cosmos-action TODOs and should only be advanced after explicit user
 approval for the new repair path.
 
+## Historical Contact-Action Reset
+
+- `TODO/contact_action_world_model/`
+
+This is historical diagnostic context after the 2026-06-26 OpenPI full-episode
+correction. It records why scorer-only and DP-handoff approaches were
+insufficient. It is not the active OpenPI method TODO.
+
+## Active OpenPI/pi0.5 Full-Episode Pivot
+
+- `TODO/openpi_pi05_contact_action/`
+
+This is the active TODO branch after the 2026-06-26 protocol correction.
+OpenPI/pi0.5 must execute from episode step `0`; DP handoff and saved-snapshot
+takeover are legacy diagnostics, not main method evidence. The previous
+takeover-oriented TODO is archived under:
+
+- `legacy/plan_todo_openpi_takeover_protocol_error_20260626/`
+
 ## Current Override
 
 The 2026-06-09 stop gate was superseded by later 2026-06-12 user instructions:

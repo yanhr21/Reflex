@@ -21,6 +21,26 @@ not method-effective. It separates low-frequency Cosmos task-world prediction
 from high-frequency robot execution and must not be mixed with the old
 direct raw-Cosmos-action checkpoint claims.
 
+## Historical Contact-Action Reset
+
+- `PLAN/contact_action_world_model/`
+
+This is historical diagnostic context after the 2026-06-26 OpenPI full-episode
+correction. It records why scorer-only and DP-handoff approaches were
+insufficient. It is not the active OpenPI method protocol.
+
+## Active OpenPI/pi0.5 Full-Episode Pivot
+
+- `PLAN/openpi_pi05_contact_action/`
+
+This is the active action-model branch after the 2026-06-26 protocol
+correction. Official OpenPI/pi0.5 must replace DP from episode step `0`.
+Static evaluation is OpenPI-only full episode. Dynamic evaluation is
+OpenPI-from-start plus causal world-model conditioning after observed scene
+change. The previous OpenPI saved-snapshot takeover plan is archived under:
+
+- `legacy/plan_todo_openpi_takeover_protocol_error_20260626/`
+
 ## Current Boundary
 
 - Keep the approved full1000 ManiSkill default-view RGB dataset.

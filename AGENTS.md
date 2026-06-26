@@ -15,7 +15,134 @@ world-model task rebinding:
 The goal is not to restore an old scene layout. The goal is task completion in
 the changed world.
 
-## Latest User Override: 2026-06-13
+## Latest User Override: 2026-06-26 OpenPI Full-Episode Correction
+
+- The active OpenPI/pi0.5 method is not a saved-snapshot takeover protocol.
+  OpenPI must replace Diffusion Policy from episode step `0`.
+- Static-scene evaluation must be OpenPI-only from reset through the full
+  episode. There is currently no accepted evidence in this workspace that
+  OpenPI has completed this static full-episode baseline.
+- Dynamic-scene evaluation must also start with OpenPI at step `0`. After an
+  observed scene/target change, the world model may provide causal future
+  scene/task-state or future `x_t` conditioning, and OpenPI must finish the
+  task. DP must not execute the first stage or finish the main method rollout.
+- Existing OpenPI saved dynamic takeover snapshot replays, object17 takeover
+  diagnostics, near-contact takeover diagnostics, and DP96 handoff results are
+  protocol-misaligned for the main method. Keep them only as legacy diagnostic
+  evidence; do not cite them as OpenPI method success.
+- The correct next gates are: OpenPI-only static full episode, OpenPI-only
+  dynamic full episode, then OpenPI + causal world-model dynamic full episode.
+
+## Latest User Override: 2026-06-24 OpenPI/pi0.5 Pivot
+
+- The active action-model pivot is now official OpenPI/pi0.5. Do not continue
+  frozen DP, scorer-only selection, or in-repo diffusion/MLP/VAE executors as
+  the main method line. Those artifacts may remain as historical diagnostics
+  and baselines only.
+- Use the 733 accepted ManiSkill PegInsertionSide trajectories as the initial
+  real-data source for OpenPI/pi0.5 adaptation:
+  `experiments/world_model_task_rebinding/cosmos3/fix3_v7_dp_user_override_sft_source_20260612_733`
+  plus the approved RGB/action/state exports derived from it. Preserve the
+  301 RGB/state frame and 300 action-step contract.
+- All model weights and architecture must stay compatible with official
+  OpenPI code. Prefer official `Pi0Config(pi05=True, ...)`,
+  official OpenPI data transforms, official checkpoint loaders, and official
+  LeRobot/RLDS-style dataset interfaces. Do not hand-write intermediate
+  action models such as custom VAEs, MLPs, or non-OpenPI diffusion policies as
+  a substitute for OpenPI/pi0.5.
+- The preferred starting checkpoint is now official `pi05_base` with a
+  fresh OpenPI/LeRobot normalization pass for the 733 ManiSkill data, because
+  the source actions are `pd_ee_delta_pose` rather than DROID Franka
+  joint-velocity actions. `pi05_droid` may be revisited only after a concrete
+  action-space adapter proves the DROID convention is respected.
+- New OpenPI/pi0.5 training must run inside a tmux-held interactive Slurm
+  allocation for at least one GPU-hour on real 733-derived data before it can
+  be interpreted as a training result. Conversion, norm-stat computation,
+  training, inference, replay, rendering, and evaluation are project compute
+  and must not run on the login node.
+- Keep new OpenPI/pi0.5 TODO, PLAN, IDEA, and evidence notes separate from
+  the old contact-suffix diffusion, Policy-DROID diagnostic, and scorer-only
+  branches so future agents do not mix incompatible conclusions.
+
+## Latest User Override: 2026-06-23 Contact-Action Reset And Execution Rules
+
+- The current method pivot is no longer "make a better scorer over weak
+  candidates." The active repair direction is a contact/insertion action
+  generator or WAM-conditioned executor that can actually move the peg into an
+  insertion/contact-continuable state. Scorers may be used as value/risk heads,
+  but scorer-only action selection must not be treated as the main method.
+- Frozen DP is now a baseline/static-skill prior, not a required final base
+  model. If DP cannot finish from dynamic contact states, evaluate stronger
+  base/action models such as a trained insertion-suffix diffusion policy,
+  Octo, pi0/OpenPI, OpenVLA-style VLA, residual RL, or a force/contact-aware
+  action model, while preserving the original dynamic task-completion
+  objective and causal observation boundary.
+- Maintain a clean active workspace. Keep only active data, important
+  checkpoints such as DP/static policy checkpoints, current SFT/WAM
+  checkpoints, current contact-action datasets, and the most important
+  evidence records under active experiment paths. Move superseded smoke,
+  canary, failed exploratory, duplicate shard, and stale scorer artifacts into
+  a clearly named backup/archive location with a manifest rather than deleting
+  them.
+- Login-node work remains restricted. Do not run data generation, rendering,
+  rollout, replay, training, evaluation, preflight scripts, project-code
+  compute/debug checks, syntax checks, imports, or smoke tests on the login
+  node. The login node may be used for read-only inspection, text/document
+  edits, `git clone`, `git commit`, `git push`, and downloads including
+  Hugging Face downloads when CPU use stays under 300% and memory stays under
+  40G.
+- All compute for experiments must run inside a tmux-held interactive Slurm
+  allocation. Do not use one-shot `sbatch` jobs. If a running command must be
+  replaced, interrupt the foreground command inside the tmux allocation with
+  `Ctrl-C` and reuse the held allocation rather than releasing it by default.
+- New model training, especially Octo/pi0/OpenVLA/contact-action/executor
+  training on the 733 RGB dataset, must run for at least one GPU-hour on real
+  data before it can be interpreted as a training result. Do not present
+  few-sample or tens-of-seconds smoke runs as progress, and do not get stuck
+  repeatedly in tiny smoke stages. Existing formal method evidence still needs
+  the stricter project floor when applicable.
+- If a blocker repeats or progress stalls for a long period without a concrete
+  new diagnosis, report the blocker, the attempts already made, and the next
+  options to the user. Do not keep trying speculative variants that drift from
+  the contact-action/WAM objective.
+- Keep new TODO, PLAN, and IDEA documents for the contact-action reset separate
+  from the old direct-Cosmos-action and scorer-only branches so future agents
+  do not mix incompatible conclusions.
+
+## Previous User Override: 2026-06-16 Experiment Execution Principles
+
+- Login-node work is limited to downloads, `git clone`, `git commit`, and
+  `git push`, plus read-only file/status inspection. Data generation,
+  rendering, rollout, replay, training, evaluation, preflight scripts, and
+  project-code compute/debug checks must run on compute nodes, not on the
+  login node.
+- Do not run low-value syntax/debug checks such as `bash -n`, `py_compile`,
+  ad-hoc import checks, or similar project-code validation on the login node.
+  They waste time for this project and still count as project-code
+  compute/debug work. If such validation is genuinely needed, run it only
+  inside the tmux-held Slurm compute allocation.
+- Do not request compute with one-shot `sbatch` jobs for this project.
+  Acquire compute through a tmux-held interactive allocation, request 1-2 days
+  when starting real experiment work, and keep the allocation available for
+  follow-up work. If a running experiment must be stopped to run a newer one,
+  interrupt the foreground command inside the tmux allocation with `Ctrl-C`
+  and reuse the held resource.
+- Do not stop or release a held GPU allocation just because the immediate
+  foreground command is changing. Preserve it unless it must be repurposed or
+  the user explicitly asks to release it. GPU utilization must be kept
+  meaningfully above the cluster release threshold; if utilization stays under
+  30% for three hours, the allocation may be released by the cluster.
+- Formal training evidence may use 1, 2, or 4 GPUs depending on which valid
+  tmux-held allocation starts first, but it must reserve/run for at least
+  3 hours. If 2 GPUs cannot be acquired promptly, try 1-GPU or 4-GPU
+  allocations instead of blocking on exactly 2 GPUs. Do not present short
+  training jobs as meaningful method evidence. This supersedes the earlier
+  4-GPU and 2-GPU minimums for full training.
+- Short overfit/sanity training is an explicit exception: it may use 1-2 GPUs,
+  does not need to run for 3 hours, and should usually run only about
+  50-100 steps. It is a debug gate only, not method evidence.
+
+## Previous User Override: 2026-06-13
 
 - Do not predeclare any row as a separate `DP-only` task branch from a
   static/no-motion label. The controller boundary must be one unified causal
@@ -378,11 +505,13 @@ the changed world.
   hand-coded segmentation, or a narrower test.
 - Do not run CPU-heavy or GPU-heavy experiments on the login node. Use Slurm
   compute nodes for rollout, replay, rendering, training, and large labeling.
-- Do not spin on the Slurm queue. When RGB-D data are pending, check queue and
-  artifacts on an approximately 30-minute cadence unless a job starts, a job
-  finishes, a notification appears, or new artifacts/logs appear. Between
-  checks, do aligned smoke validation, preflight, artifact inspection,
-  failure-localization tooling, or documentation; do not wait passively.
+- Do not spin on the Slurm queue. When data or training are pending, check
+  queue and artifacts on an approximately 30-minute cadence unless a job
+  starts, a job finishes, a notification appears, or new artifacts/logs
+  appear. Between checks, do read-only artifact inspection and documentation
+  on the login node; run smoke validation, preflight, rendering, rollout,
+  evaluation, and other project-code compute only inside the tmux-held compute
+  allocation.
 - Do not use CPU-only ManiSkill/SAPIEN controller rollout as a substitute for
   a render-capable Slurm allocation. Even no-video controller rollout can
   construct a SAPIEN render system and fail without a working Vulkan/GPU
@@ -418,8 +547,11 @@ For every substantial experiment or code change:
 2. State the first-principles reason for the action in the manifest, evidence
    note, TODO entry, or code metadata: what physical failure or capability it
    addresses and why it is part of RGB-D world-model task rebinding.
-3. Run the aligned experiment through Slurm or a lightweight local syntax/path
-   check only. Do not run heavy jobs on the login node.
+3. Run the aligned experiment through a tmux-held Slurm compute allocation.
+   On the login node, limit work to downloads, `git clone`, `git commit`,
+   `git push`, and read-only file/status inspection. Do not run project-code
+   compute, preflight, rendering, rollout, evaluation, or training on the
+   login node.
 4. If it fails, inspect logs, manifests, generated files, and visual artifacts
    before interpreting the result. Classify the failure as data, rendering,
    perception, world-model, controller, physics, scheduling, or evaluation
@@ -503,8 +635,10 @@ If the answer is unclear, inspect the plan/TODO files before proceeding.
 
 ## Slurm And Rendering
 
-- Use Slurm for heavy rollout, replay, rendering, training, and label
-  generation.
+- Use Slurm compute resources for heavy rollout, replay, rendering, training,
+  and label generation, but acquire them through tmux-held interactive
+  allocations rather than one-shot `sbatch` jobs unless the user explicitly
+  changes this rule.
 - Do not use `scancel` as the default way to stop a command running inside a
   tmux-held Slurm allocation. Preserve held GPU resources. Stop in-allocation
   commands by sending `Ctrl-C` to the tmux pane or otherwise interrupting the
@@ -512,72 +646,32 @@ If the answer is unclear, inspect the plan/TODO files before proceeding.
   explicitly asks to release/cancel Slurm resources, or when a process is
   unreachable and the action is clearly documented as not releasing the held
   allocation.
-- Latest training-resource override from 2026-06-04: model training evidence
-  must use at least 1 H200 GPU and reserve at least 3 hours. Do not force
-  4 H200 GPUs as the minimum. A 4-GPU job is still allowed when it starts
-  earlier or is explicitly useful, but future RGB-D slot/world-model training
-  should prefer a persistent 1-H200 allocation when that reduces queue churn.
-  A 1-day allocation is the default long request; use longer only when live
-  Slurm forecasts and experiment duration justify it.
-  Shorter or non-H200 jobs may only be treated as code-path smoke checks, not
-  as training evidence or evidence against a research direction.
-- Latest training-continuity override from 2026-06-13: do not let active
-  world-model training sit idle while waiting for an ideal multi-GPU block.
-  If a 4-GPU or 8-GPU allocation is pending, immediately use the best available
-  legal fallback that can make real progress, including 2 H200 GPUs or 1 H200
-  GPU, then migrate by interrupting the foreground process inside tmux with
-  `Ctrl-C` when the larger allocation actually starts. Keep GPU utilization
-  meaningfully above the cluster's low-utilization release threshold during
-  long training; do not leave held training allocations idle unless they are
-  being actively repurposed or debugged. Never run two training processes that
-  write to the same checkpoint/output directory at the same time.
+- Current formal training evidence may use 1, 2, or 4 GPUs depending on which
+  valid tmux-held allocation starts first, but it must run/reserve for at
+  least 3 hours. If a 2-GPU allocation is stuck pending, request 1-GPU and/or
+  4-GPU alternatives instead of blocking on exactly 2 GPUs. Short
+  overfit/sanity training may use 1-2 GPUs for about 50-100 steps without a
+  3-hour minimum, but it is only a debug gate and must not be presented as
+  meaningful method evidence.
+- Keep GPU utilization meaningfully above the cluster's low-utilization
+  release threshold during long held allocations; do not leave held GPU
+  allocations idle unless they are being actively repurposed or debugged. If a
+  newer experiment must replace the current one, stop the foreground process
+  inside the tmux allocation with `Ctrl-C` and reuse the allocation. Never run
+  two training processes that write to the same checkpoint/output directory at
+  the same time.
 - RGB-D data generation and RGB-D world-model training are required core work,
   not optional follow-up. Synchronized RGB, depth, state, actions, env states,
   camera parameters, and object-pose labels must be generated so that the
   world model can be trained and evaluated from RGB-D-derived representations.
   If full RGB-D data are missing, do not advance method claims; fix data
   generation first.
-- Latest RGB-D render scheduling override: if multi-GPU blocks do not start
-  promptly, submit disjoint one-GPU RGB-D render shards instead of waiting.
-  The previous 8-node / 64-GPU cap and the previous refusal of one-GPU render
-  shards are superseded for RGB-D data generation. This override does not relax
-  exact expected-count inspection, visual review, RGB-D-derived evidence,
-  training floors, controller metrics, or video inspection.
-- One-GPU RGB-D rendering is a small rolling-batch fallback, not permission to
-  submit one job per trajectory or a large fanout of single-GPU jobs. Estimate
-  walltime from completed shards, submit a small batch, inspect runtime,
-  failures, H5/video/contact artifacts, then decide whether to scale. The
-  default wrapper guard rejects more than 8 render jobs per submission and
-  more than 4 one-GPU render jobs per submission unless explicitly overridden
-  with a documented reason.
-- Large RGB-D generation should use whatever legal Slurm layout starts useful
-  disjoint work soonest, including one-GPU shards. Full-node or multi-GPU
-  allocations are still fine when they start earlier, but they are not required
-  for rendering. Keep every shard disjoint and preserve the same strict
-  inspection and downstream training gates.
-- Before submitting a duplicate or replacement RGB-D render, run non-executing
-  Slurm probes such as `sbatch --test-only` for the legal dense/partial-node
-  layouts. Submit the replacement only if it is expected to produce the same
-  strictly inspected RGB-D data earlier without wasteful allocation. If every
-  legal probe starts later, do not pollute the queue; record that decision and
-  keep waiting for the current earliest RGB-D path.
-- `sbatch --test-only` is a probe, not authoritative replacement evidence.
-  Do not cancel an existing active RGB-D data/training/method path merely
-  because a test-only probe looks earlier. If a replacement is justified,
-  first submit at most one complete or explicitly bounded replacement, compare
-  the replacement's actual `squeue`/`scontrol` pending state and stable start
-  forecast against the current path, verify downstream dependencies/output
-  paths are safely redirected or intentionally absent, and only then cancel
-  the old path. If the replacement does not get a stable earlier real
-  forecast, cancel the replacement before allocation and record the failure as
-  scheduling evidence, not method evidence.
-- Do not treat a queued large RGB-D render as the only path just because its
-  forecast is earliest. When full RGB-D data are missing, also submit disjoint
-  shard jobs that can fit smaller backfill holes, including one-GPU shards
-  under the latest override, while ensuring the merged output still passes
-  exact expected-count strict inspection. The correct strategy is to get RGB-D
-  work running early, then continue adding legal disjoint shards, not to wait
-  passively for a single large block.
+- Superseded RGB-D render scheduling notes allowed one-GPU shard submissions
+  and `sbatch --test-only` probes. Those notes are no longer active. Current
+  resource policy is tmux-held interactive compute allocation first, then run
+  export/render/preflight work inside that allocation while preserving the
+  same exact-count inspection, visual review, RGB-D-derived evidence,
+  controller metrics, and video inspection gates.
 - For SAPIEN/ManiSkill rendering, export:
   - `VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json`
   - `DISPLAY=`
@@ -588,10 +682,10 @@ If the answer is unclear, inspect the plan/TODO files before proceeding.
   observations from specific jobs and times, not policy. If a bad-node-list
   file is reintroduced into the active repo, remove it before scheduling from
   it. Do not hard-code a default node exclusion in Slurm wrapper source. Use
-  live `sinfo`/`scontrol`, `sbatch --test-only`, and targeted canaries for
-  job-local node decisions; if a current drain/down node must be excluded, pass
-  it explicitly at submission time and record the live evidence in the manifest
-  or evidence note.
+  live `sinfo`/`scontrol` and targeted canaries inside the tmux-held compute
+  allocation for node decisions; if a current drain/down node must be excluded,
+  pass it explicitly at allocation time and record the live evidence in the
+  manifest or evidence note.
 - Every heavy job should write a manifest with command, seed range, node,
   environment, checkpoint, and output path.
 
