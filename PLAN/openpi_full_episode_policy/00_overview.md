@@ -69,19 +69,41 @@ Execution protocol:
 
 1. Start the episode with OpenPI from step `0`.
 2. Use only observed history/current perception to detect scene change.
-3. After the event, invoke the world model causally from observed RGB/state
-   history and current task context.
-4. The world model imagines future scene/task evolution and produces the
+3. If no target/hole motion is detected and OpenPI remains task-continuable,
+   keep the world model inactive or pass through the normal task prompt.
+4. After observed target/hole motion, invoke the world model causally from
+   observed RGB/state history and current task context.
+5. The world model imagines future scene/task evolution and produces the
    future X-chat/task condition needed by OpenPI.
-5. OpenPI consumes current observation plus world-model condition and continues
+6. OpenPI consumes current observation plus world-model condition and continues
    producing robot actions.
-6. Execute only short horizons before re-observing; refresh the world-model
+7. Execute only short horizons before re-observing; refresh the world-model
    context with real observations.
 
 Dynamic success requires live simulator evidence that OpenPI, not DP, executed
 the episode and completed insertion in the changed world.
 
-## 6. World Model Role
+## 6. Prefix And Rollout Semantics
+
+Prefix-conditioned rollout is allowed only when the prefix is the real observed
+history available at that time in the same live episode. Rolling out from
+different prefix frames is useful for world-model training, stress testing, and
+receding closed-loop diagnostics.
+
+It is not method evidence if it starts from an arbitrary saved simulator
+snapshot, a DP-generated prefix state, or a hand-picked frame and then reports
+OpenPI success as if OpenPI ran the full episode. The deployed protocol is:
+
+1. OpenPI acts from reset.
+2. The system continuously observes the real scene.
+3. A causal target-motion detector decides whether the world model should be
+   activated.
+4. The world model provides future scene/X-chat/task conditioning only after
+   the observed scene change or uncertainty makes that condition useful.
+5. OpenPI remains the robot action policy before and after world-model
+   activation.
+
+## 7. World Model Role
 
 The world model is not the robot action policy. Its role is to provide
 task-relevant future scene imagination and future X-chat/task conditioning for
@@ -91,13 +113,15 @@ Required world-model evidence before dynamic claims:
 
 - Input boundary: current/history observations only, no future ground-truth
   privileged state.
+- Activation boundary: a causal target-motion detector or continuability gate
+  must decide whether world-model conditioning is needed.
 - Output boundary: future scene/task/X-chat condition usable by OpenPI.
 - Receding interface: short prediction, OpenPI action, real re-observation,
   updated prediction.
 - Visual/task sanity checks showing the imagined target/hole state is coherent
   enough to condition OpenPI.
 
-## 7. Forbidden Evidence
+## 8. Forbidden Evidence
 
 The following must remain legacy or diagnostic only:
 
@@ -109,7 +133,7 @@ The following must remain legacy or diagnostic only:
   active method.
 - Toy in-repo action models presented as OpenPI progress.
 
-## 8. Execution Discipline
+## 9. Execution Discipline
 
 - Training/evaluation/rendering/replay must run in tmux-held interactive Slurm
   allocations, not on the login node.

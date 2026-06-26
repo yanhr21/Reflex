@@ -48,6 +48,17 @@ future scene/X-chat/task conditioning for OpenPI after observed scene change.
 
 - [ ] Define the causal dynamic event interface: observed history/current
       perception only.
+- [ ] Implement a causal target-motion detector for target/hole movement from
+      observed history; do not use sample labels or future ground-truth state
+      to decide controller mode.
+- [ ] Implement a world-model activation/continuability gate: if no target
+      motion is detected and OpenPI remains task-continuable, keep OpenPI
+      running without world-model conditioning; after observed motion or
+      uncertainty, activate world-model conditioning.
+- [ ] Define legal prefix semantics: prefix frames must be real observations
+      from the same live episode up to the current time. Different-frame
+      prefix rollout is allowed for WM diagnostics and receding-loop testing,
+      but not as full-episode OpenPI success evidence.
 - [ ] Define the world-model output consumed by OpenPI: future scene summary,
       future X-chat/task text, and any allowed task-state condition.
 - [ ] Build the receding execution loop: observe, world-model imagine,
@@ -61,6 +72,10 @@ future scene/X-chat/task conditioning for OpenPI after observed scene change.
 ## Evidence Gates
 
 - [ ] Do not report snapshot takeover as static or dynamic method success.
+- [ ] Do not report arbitrary saved-prefix rollout as deployed dynamic
+      success. A valid dynamic run must start with OpenPI at reset, observe the
+      target motion online, activate the world model causally, and continue
+      with OpenPI actions.
 - [ ] Do not report offline action inference as live execution success.
 - [ ] Do not report a world model as providing OpenPI actions; the world model
       provides future scene/X-chat/task conditioning.
