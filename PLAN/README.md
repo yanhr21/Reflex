@@ -1,65 +1,24 @@
-# Plan
+# Active Plan
 
-Active plan entry point after the 2026-06-09 Cosmos3 reset.
+The active plan is now only:
 
-## Active Directory
+- `PLAN/openpi_full_episode_policy/00_overview.md`
 
-- `PLAN/cosmos3_300f_world_model/`
+All previous plan content has been moved under `PLAN/legacy/`. Legacy files are
+historical context only and must not drive execution.
 
-This is the only active plan for Cosmos3 training and testing. The previous
-`PLAN/world_model_task_rebinding/` directory was moved to:
+## Current Protocol Boundary
 
-- `PLAN/_backup_world_model_task_rebinding_20260609_before_cosmos3_300f_reset/`
-
-## Proposed Method Branch
-
-- `PLAN/cosmos3_lowfreq_wm_executor/`
-
-This is a new, separate proposal after the 2026-06-14 finding that the
-full-length iter2700 closed loop satisfies the implementation contract but is
-not method-effective. It separates low-frequency Cosmos task-world prediction
-from high-frequency robot execution and must not be mixed with the old
-direct raw-Cosmos-action checkpoint claims.
-
-## Historical Contact-Action Reset
-
-- `PLAN/contact_action_world_model/`
-
-This is historical diagnostic context after the 2026-06-26 OpenPI full-episode
-correction. It records why scorer-only and DP-handoff approaches were
-insufficient. It is not the active OpenPI method protocol.
-
-## Active OpenPI/pi0.5 Full-Episode Pivot
-
-- `PLAN/openpi_pi05_contact_action/`
-
-This is the active action-model branch after the 2026-06-26 protocol
-correction. Official OpenPI/pi0.5 must replace DP from episode step `0`.
-Static evaluation is OpenPI-only full episode. Dynamic evaluation is
-OpenPI-from-start plus causal world-model conditioning after observed scene
-change. The previous OpenPI saved-snapshot takeover plan is archived under:
-
-- `legacy/plan_todo_openpi_takeover_protocol_error_20260626/`
-
-## Current Boundary
-
-- Keep the approved full1000 ManiSkill default-view RGB dataset.
-- Treat the episode as a 300-step rollout, with 301 RGB/state frames when the
-  reset frame is included.
-- Do not construct or use 129-frame videos, 128-action chunks, old 93-frame
-  exports, cropped metrics, or any `min(pred, ref)` evaluation.
-- Do not start training or evaluation until the new plan/TODO is reviewed.
-
-## Active Assets
-
-- Cosmos3 checkpoints: `checkpoints/cosmos3/`
-- Base static DP checkpoints: `experiments/dp_peg1000/run_90201/checkpoints/`
-- Approved full1000 RGB videos:
-  `experiments/world_model_task_rebinding/cosmos3/sft_dataset_full1000_maniskill_default_regen_20260606_0055`
-- Full1000 source H5/specs:
-  `data/cosmos3/full1000_rgbd_env_states_20260603_1938`
-
-Old experiment results and old evidence notes were moved outside the current
-ICLR2027 tree under:
-
-- `/public/home/yanhongru/ICLR2027_archive/reflex_20260609_cosmos3_300f_reset/`
+- OpenPI/pi0.5 replaces Diffusion Policy as the action policy.
+- OpenPI must run from episode step `0`; no DP prefix, no DP handoff, and no
+  saved-snapshot takeover as method evidence.
+- Static scene evaluation is full-episode OpenPI-only insertion.
+- Dynamic scene evaluation starts with OpenPI and, after observed scene change,
+  uses a causal world model to provide future scene/X-chat conditions for
+  OpenPI; OpenPI still produces the robot actions.
+- The official OpenPI architecture, transforms, and checkpoint loading path
+  must be preserved. Do not replace OpenPI with custom MLP/VAE/diffusion
+  executors.
+- Use 733 accepted ManiSkill PegInsertionSide trajectories as the first real
+  adaptation data source, preserving the 301 RGB/state frame and 300 action
+  step contract.
