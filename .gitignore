@@ -15,6 +15,10 @@ logs/
 
 # Heavy experiment subtrees stay local. Small text/json/md summaries can still
 # be force-added when they are evidence records.
+legacy/
+experiments/_archive*/
+experiments/dp_peg1000/
+experiments/world_model_task_rebinding/cosmos3/
 experiments/**/checkpoints/
 experiments/**/checkpoints_local_preserved/
 experiments/**/checkpoint*/
