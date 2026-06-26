@@ -1,6 +1,6 @@
 {
   "boundary": "Corrected live closed-loop evidence is negative for the current checkpoint/condition root. Do not treat validation loss or generated readout metrics as controller success, and do not continue SFT from the current condition root as if more iterations alone are the fix.",
-  "generated_at": "2026-06-14T10:26:42.778284+08:00",
+  "generated_at": "2026-06-14T12:47:38.824923+08:00",
   "generated_eval": {
     "eval_roots": [
       {

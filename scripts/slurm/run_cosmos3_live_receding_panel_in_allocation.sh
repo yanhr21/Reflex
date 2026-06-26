@@ -2,6 +2,14 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/public/home/yanhongru/ICLR2027/Reflex}"
+if [[ "${SET_NVIDIA_VK_ICD:-false}" == "true" ]]; then
+  export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/etc/vulkan/icd.d/nvidia_icd.json}"
+fi
+if [[ -n "${DISPLAY:-}" ]]; then
+  export DISPLAY
+else
+  unset DISPLAY
+fi
 
 if [[ -z "${SLURM_JOB_ID:-}" || -z "${SLURM_STEP_ID:-}" || "${SLURM_STEP_ID}" == "extern" ]]; then
   cat >&2 <<'EOF'
@@ -46,9 +54,36 @@ TARGET_MOTION_CONSECUTIVE_FRAMES="${TARGET_MOTION_CONSECUTIVE_FRAMES:-2}"
 MAX_RECEDING_ITERATIONS="${MAX_RECEDING_ITERATIONS:-40}"
 ACTION_EXEC_HORIZON="${ACTION_EXEC_HORIZON:-8}"
 DP_HANDOFF_HORIZON="${DP_HANDOFF_HORIZON:-32}"
+DP_HANDOFF_CHUNK_HORIZON="${DP_HANDOFF_CHUNK_HORIZON:-0}"
 EXTERNAL_TARGET_MODE="${EXTERNAL_TARGET_MODE:-source_env_state}"
 RUN_COSMOS_INFERENCE="${RUN_COSMOS_INFERENCE:-true}"
+CONTROLLER_ACTION_SOURCE="${CONTROLLER_ACTION_SOURCE:-cosmos_robot_action}"
+EXECUTOR_CHECKPOINT="${EXECUTOR_CHECKPOINT:-}"
+CANDIDATE_OUTCOME_SCORER_CHECKPOINT="${CANDIDATE_OUTCOME_SCORER_CHECKPOINT:-}"
+CANDIDATE_OUTCOME_SCORER_SUMMARY="${CANDIDATE_OUTCOME_SCORER_SUMMARY:-}"
+CANDIDATE_OUTCOME_SCORER_DP_MARGIN="${CANDIDATE_OUTCOME_SCORER_DP_MARGIN:-0.0}"
+CANDIDATE_OUTCOME_SCORER_MIN_PROGRESS_DELTA="${CANDIDATE_OUTCOME_SCORER_MIN_PROGRESS_DELTA:--1000000000.0}"
+CANDIDATE_OUTCOME_SCORER_MIN_CONTINUABLE_PROB="${CANDIDATE_OUTCOME_SCORER_MIN_CONTINUABLE_PROB:-0.0}"
+CANDIDATE_OUTCOME_SCORER_MIN_INSERTED_PROB="${CANDIDATE_OUTCOME_SCORER_MIN_INSERTED_PROB:-0.0}"
+CANDIDATE_OUTCOME_SCORER_SCORE_STATE_ABS_AXIS_WEIGHTS="${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_ABS_AXIS_WEIGHTS:-}"
+CANDIDATE_OUTCOME_SCORER_SCORE_STATE_TARGET="${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_TARGET:-}"
+CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS="${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-}"
+SOURCE_INSERTION_SUFFIX_BANK="${SOURCE_INSERTION_SUFFIX_BANK:-}"
+SOURCE_SUFFIX_K="${SOURCE_SUFFIX_K:-0}"
+SOURCE_SUFFIX_BLENDS="${SOURCE_SUFFIX_BLENDS:-1.0}"
+SOURCE_SUFFIX_EXECUTE_STEPS="${SOURCE_SUFFIX_EXECUTE_STEPS:-32}"
+SOURCE_SUFFIX_OFFSETS="${SOURCE_SUFFIX_OFFSETS:-}"
+SOURCE_SUFFIX_SCENARIO_MATCH="${SOURCE_SUFFIX_SCENARIO_MATCH:-false}"
+SOURCE_SUFFIX_QUERY_X_WEIGHT="${SOURCE_SUFFIX_QUERY_X_WEIGHT:-1.0}"
+SOURCE_SUFFIX_QUERY_Y_WEIGHT="${SOURCE_SUFFIX_QUERY_Y_WEIGHT:-2.0}"
+SOURCE_SUFFIX_QUERY_Z_WEIGHT="${SOURCE_SUFFIX_QUERY_Z_WEIGHT:-4.0}"
+SOURCE_SUFFIX_MAX_DISTANCE="${SOURCE_SUFFIX_MAX_DISTANCE:--1.0}"
+SOURCE_SUFFIX_IGNORE_RESIDUAL_CAP="${SOURCE_SUFFIX_IGNORE_RESIDUAL_CAP:-false}"
+EXECUTOR_RESIDUAL_SCALE="${EXECUTOR_RESIDUAL_SCALE:-1.0}"
 CLIP_LIVE_ACTIONS="${CLIP_LIVE_ACTIONS:-true}"
+SAVE_LIVE_STATE_SNAPSHOTS="${SAVE_LIVE_STATE_SNAPSHOTS:-false}"
+SAVE_CANDIDATE_ACTION_BANK="${SAVE_CANDIDATE_ACTION_BANK:-false}"
+LIVE_PROGRESS_INTERVAL="${LIVE_PROGRESS_INTERVAL:-0}"
 VIDEO_FPS="${VIDEO_FPS:-30}"
 ALLOW_LIVE_RECEDING_DIAGNOSTIC="${ALLOW_LIVE_RECEDING_DIAGNOSTIC:-false}"
 
@@ -64,6 +99,43 @@ if [[ "${PRETRIGGER_CONTROL_MODE}" != "frozen_dp_until_target_motion" ]]; then
 fi
 if [[ "${RUN_COSMOS_INFERENCE}" != "true" ]]; then
   diagnostic_reasons+=("cosmos_inference_disabled")
+fi
+case "${CONTROLLER_ACTION_SOURCE}" in
+  residual_executor|contact_executor|candidate_executor)
+    if [[ ! -s "${EXECUTOR_CHECKPOINT}" ]]; then
+      diagnostic_reasons+=("missing_${CONTROLLER_ACTION_SOURCE}_checkpoint")
+    fi
+    ;;
+esac
+if [[ -n "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" && ! -s "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" ]]; then
+  diagnostic_reasons+=("missing_candidate_outcome_scorer_checkpoint")
+fi
+if [[ -n "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" && "${CONTROLLER_ACTION_SOURCE}" != "candidate_executor" ]]; then
+  diagnostic_reasons+=("candidate_outcome_scorer_requires_candidate_executor")
+fi
+if [[ -n "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" && -z "${CANDIDATE_OUTCOME_SCORER_SUMMARY}" ]]; then
+  CANDIDATE_OUTCOME_SCORER_SUMMARY="$(dirname "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}")/training_summary.json"
+fi
+if [[ -n "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" ]]; then
+  if [[ ! -s "${CANDIDATE_OUTCOME_SCORER_SUMMARY}" ]]; then
+    diagnostic_reasons+=("missing_candidate_outcome_scorer_summary")
+  elif ! "${ROOT}/.venv/bin/python" - "${CANDIDATE_OUTCOME_SCORER_SUMMARY}" "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = json.loads(Path(sys.argv[1]).read_text())
+checkpoint = Path(sys.argv[2]).resolve()
+expected_raw = summary.get("formal_live_eval_checkpoint")
+expected = Path(str(expected_raw)).resolve() if expected_raw else None
+if summary.get("ready_for_formal_live_eval") is not True:
+    raise SystemExit(1)
+if expected is None or expected != checkpoint:
+    raise SystemExit(1)
+PY
+  then
+    diagnostic_reasons+=("candidate_outcome_scorer_not_formal_live_ready")
+  fi
 fi
 if (( ${#diagnostic_reasons[@]} > 0 )) && [[ "${ALLOW_LIVE_RECEDING_DIAGNOSTIC}" != "true" ]]; then
   {
@@ -102,8 +174,32 @@ mkdir -p "${OUTPUT_ROOT}"
   echo "max_receding_iterations=${MAX_RECEDING_ITERATIONS}"
   echo "action_exec_horizon=${ACTION_EXEC_HORIZON}"
   echo "dp_handoff_horizon=${DP_HANDOFF_HORIZON}"
+  echo "dp_handoff_chunk_horizon=${DP_HANDOFF_CHUNK_HORIZON}"
   echo "external_target_mode=${EXTERNAL_TARGET_MODE}"
   echo "run_cosmos_inference=${RUN_COSMOS_INFERENCE}"
+  echo "controller_action_source=${CONTROLLER_ACTION_SOURCE}"
+  echo "executor_checkpoint=${EXECUTOR_CHECKPOINT:-none}"
+  echo "candidate_outcome_scorer_checkpoint=${CANDIDATE_OUTCOME_SCORER_CHECKPOINT:-none}"
+  echo "candidate_outcome_scorer_summary=${CANDIDATE_OUTCOME_SCORER_SUMMARY:-none}"
+  echo "candidate_outcome_scorer_dp_margin=${CANDIDATE_OUTCOME_SCORER_DP_MARGIN}"
+  echo "candidate_outcome_scorer_min_progress_delta=${CANDIDATE_OUTCOME_SCORER_MIN_PROGRESS_DELTA}"
+  echo "candidate_outcome_scorer_min_continuable_prob=${CANDIDATE_OUTCOME_SCORER_MIN_CONTINUABLE_PROB}"
+  echo "candidate_outcome_scorer_min_inserted_prob=${CANDIDATE_OUTCOME_SCORER_MIN_INSERTED_PROB}"
+  echo "candidate_outcome_scorer_score_state_abs_axis_weights=${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_ABS_AXIS_WEIGHTS:-checkpoint_default}"
+  echo "candidate_outcome_scorer_score_state_target=${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_TARGET:-checkpoint_default}"
+  echo "candidate_executor_short_prefix_steps=${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-none}"
+  echo "source_insertion_suffix_bank=${SOURCE_INSERTION_SUFFIX_BANK:-none}"
+  echo "source_suffix_k=${SOURCE_SUFFIX_K}"
+  echo "source_suffix_blends=${SOURCE_SUFFIX_BLENDS}"
+  echo "source_suffix_execute_steps=${SOURCE_SUFFIX_EXECUTE_STEPS}"
+  echo "source_suffix_offsets=${SOURCE_SUFFIX_OFFSETS:-none}"
+  echo "source_suffix_scenario_match=${SOURCE_SUFFIX_SCENARIO_MATCH}"
+  echo "source_suffix_max_distance=${SOURCE_SUFFIX_MAX_DISTANCE}"
+  echo "source_suffix_ignore_residual_cap=${SOURCE_SUFFIX_IGNORE_RESIDUAL_CAP}"
+  echo "executor_residual_scale=${EXECUTOR_RESIDUAL_SCALE}"
+  echo "save_live_state_snapshots=${SAVE_LIVE_STATE_SNAPSHOTS}"
+  echo "save_candidate_action_bank=${SAVE_CANDIDATE_ACTION_BANK}"
+  echo "live_progress_interval=${LIVE_PROGRESS_INTERVAL}"
   echo "allow_live_receding_diagnostic=${ALLOW_LIVE_RECEDING_DIAGNOSTIC}"
   echo "diagnostic_reasons=${diagnostic_reasons[*]:-none}"
   echo "boundary=corrected full-300 live-receding diagnostic panel; unified target-motion detector controls DP vs Cosmos. If the detector never fires, DP continues by the same rule; this is not a separate static-sample branch. Not one-shot DP takeover evidence"
@@ -119,6 +215,69 @@ if [[ "${CLIP_LIVE_ACTIONS}" == "true" ]]; then
   bool_args+=(--clip-live-actions)
 else
   bool_args+=(--no-clip-live-actions)
+fi
+if [[ "${SAVE_LIVE_STATE_SNAPSHOTS}" == "true" ]]; then
+  bool_args+=(--save-live-state-snapshots)
+else
+  bool_args+=(--no-save-live-state-snapshots)
+fi
+if [[ "${SAVE_CANDIDATE_ACTION_BANK}" == "true" ]]; then
+  bool_args+=(--save-candidate-action-bank)
+else
+  bool_args+=(--no-save-candidate-action-bank)
+fi
+executor_args=()
+if [[ -n "${EXECUTOR_CHECKPOINT}" ]]; then
+  executor_args+=(--executor-checkpoint "${EXECUTOR_CHECKPOINT}")
+fi
+if [[ -n "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}" ]]; then
+  executor_args+=(
+    --candidate-outcome-scorer-checkpoint "${CANDIDATE_OUTCOME_SCORER_CHECKPOINT}"
+    --candidate-outcome-scorer-dp-margin "${CANDIDATE_OUTCOME_SCORER_DP_MARGIN}"
+    --candidate-outcome-scorer-min-progress-delta "${CANDIDATE_OUTCOME_SCORER_MIN_PROGRESS_DELTA}"
+    --candidate-outcome-scorer-min-continuable-prob "${CANDIDATE_OUTCOME_SCORER_MIN_CONTINUABLE_PROB}"
+    --candidate-outcome-scorer-min-inserted-prob "${CANDIDATE_OUTCOME_SCORER_MIN_INSERTED_PROB}"
+  )
+  if [[ -n "${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_ABS_AXIS_WEIGHTS}" ]]; then
+    executor_args+=(
+      --candidate-outcome-scorer-score-state-abs-axis-weights "${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_ABS_AXIS_WEIGHTS}"
+    )
+  fi
+  if [[ -n "${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_TARGET}" ]]; then
+    executor_args+=(
+      --candidate-outcome-scorer-score-state-target "${CANDIDATE_OUTCOME_SCORER_SCORE_STATE_TARGET}"
+    )
+  fi
+fi
+if [[ -n "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}" ]]; then
+  executor_args+=(
+    --candidate-executor-short-prefix-steps "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}"
+  )
+fi
+if [[ -n "${SOURCE_INSERTION_SUFFIX_BANK}" && "${SOURCE_SUFFIX_K}" != "0" ]]; then
+  executor_args+=(
+    --source-insertion-suffix-bank "${SOURCE_INSERTION_SUFFIX_BANK}"
+    --source-suffix-k "${SOURCE_SUFFIX_K}"
+    --source-suffix-blends "${SOURCE_SUFFIX_BLENDS}"
+    --source-suffix-execute-steps "${SOURCE_SUFFIX_EXECUTE_STEPS}"
+    --source-suffix-query-x-weight "${SOURCE_SUFFIX_QUERY_X_WEIGHT}"
+    --source-suffix-query-y-weight "${SOURCE_SUFFIX_QUERY_Y_WEIGHT}"
+    --source-suffix-query-z-weight "${SOURCE_SUFFIX_QUERY_Z_WEIGHT}"
+    --source-suffix-max-distance "${SOURCE_SUFFIX_MAX_DISTANCE}"
+  )
+  if [[ -n "${SOURCE_SUFFIX_OFFSETS}" ]]; then
+    executor_args+=(--source-suffix-offsets "${SOURCE_SUFFIX_OFFSETS}")
+  fi
+  if [[ "${SOURCE_SUFFIX_SCENARIO_MATCH}" == "true" ]]; then
+    executor_args+=(--source-suffix-scenario-match)
+  else
+    executor_args+=(--no-source-suffix-scenario-match)
+  fi
+  if [[ "${SOURCE_SUFFIX_IGNORE_RESIDUAL_CAP}" == "true" ]]; then
+    executor_args+=(--source-suffix-ignore-residual-cap)
+  else
+    executor_args+=(--no-source-suffix-ignore-residual-cap)
+  fi
 fi
 
 "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/run_cosmos3_live_receding_panel.py" \
@@ -140,8 +299,13 @@ fi
   --max-receding-iterations "${MAX_RECEDING_ITERATIONS}" \
   --action-exec-horizon "${ACTION_EXEC_HORIZON}" \
   --dp-handoff-horizon "${DP_HANDOFF_HORIZON}" \
+  --dp-handoff-chunk-horizon "${DP_HANDOFF_CHUNK_HORIZON}" \
   --continuability-stats-json "${CONTINUABILITY_STATS_JSON}" \
   --external-target-mode "${EXTERNAL_TARGET_MODE}" \
+  --controller-action-source "${CONTROLLER_ACTION_SOURCE}" \
+  --executor-residual-scale "${EXECUTOR_RESIDUAL_SCALE}" \
   --video-fps "${VIDEO_FPS}" \
+  --live-progress-interval "${LIVE_PROGRESS_INTERVAL}" \
+  "${executor_args[@]}" \
   "${bool_args[@]}" \
   2>&1 | tee "${OUTPUT_ROOT}/live_receding_panel.log"

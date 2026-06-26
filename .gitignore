@@ -11,8 +11,30 @@ external/
 # Large/generated experiment artifacts
 checkpoints/
 data/
-experiments/
 logs/
+
+# Heavy experiment subtrees stay local. Small text/json/md summaries can still
+# be force-added when they are evidence records.
+experiments/**/checkpoints/
+experiments/**/checkpoints_local_preserved/
+experiments/**/checkpoint*/
+experiments/**/params/
+experiments/**/train_state/
+experiments/**/lerobot_home/
+experiments/**/openpi_data_home/
+experiments/**/uv_cache/
+experiments/**/uv_prewarm_env*/
+experiments/**/hf_datasets_cache*/
+legacy/**/checkpoints/
+legacy/**/checkpoints_local_preserved/
+legacy/**/checkpoint*/
+legacy/**/params/
+legacy/**/train_state/
+legacy/**/lerobot_home/
+legacy/**/openpi_data_home/
+legacy/**/uv_cache/
+legacy/**/uv_prewarm_env*/
+legacy/**/hf_datasets_cache*/
 
 # Binary model/data/media artifacts
 *.ckpt
@@ -29,6 +51,12 @@ logs/
 *.gif
 *.npy
 *.npz
+*.parquet
+*.arrow
+*.feather
+*.zarr
+*.db
+*.sqlite
 *.pkl
 *.pt
 *.pth

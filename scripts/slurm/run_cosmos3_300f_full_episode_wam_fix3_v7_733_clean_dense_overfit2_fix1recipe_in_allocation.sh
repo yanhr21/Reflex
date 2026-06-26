@@ -12,17 +12,17 @@ dry_run_config_only=true
 condition_root=${CONDITION_ROOT:-<required>}
 clean_dense_preflight_summary=${CLEAN_DENSE_PREFLIGHT_SUMMARY:-<required>}
 next_action_gate_output=${NEXT_ACTION_GATE_OUTPUT:-<summary_dir>/next_action_gate_clean_dense_overfit_sft.json}
-output_root=${OUTPUT_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_clean_dense_overfit2_rgb_300step_fix1recipe_4gpu_${STAMP}}
+output_root=${OUTPUT_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_clean_dense_overfit2_rgb_300step_fix1recipe_2gpu_${STAMP}}
 expected_source_episodes=${EXPECTED_SOURCE_EPISODES:-2}
 run_sft=${RUN_SFT:-true}
 allow_clean_dense_overfit_sft=${ALLOW_CLEAN_DENSE_OVERFIT_SFT:-false}
 prefix_role_source=${PREFIX_ROLE_SOURCE:-physical_mode}
 dense_receding_prefix_stride=${DENSE_RECEDING_PREFIX_STRIDE:-8}
 late_rebind_weight=${LATE_REBIND_WEIGHT:-3}
-max_iter=${MAX_ITER:-300}
-save_iter=${SAVE_ITER:-100}
+max_iter=${MAX_ITER:-100}
+save_iter=${SAVE_ITER:-50}
 validation_iter=${VALIDATION_ITER:-50}
-nproc_per_node=${NPROC_PER_NODE:-4}
+nproc_per_node=${NPROC_PER_NODE:-2}
 would_refuse_without_allow=$([[ "${ALLOW_CLEAN_DENSE_OVERFIT_SFT:-false}" == "true" ]] && echo false || echo true)
 would_refuse_without_condition_root=$([[ -n "${CONDITION_ROOT:-}" ]] && echo false || echo true)
 would_refuse_without_preflight_summary=$([[ -n "${CLEAN_DENSE_PREFLIGHT_SUMMARY:-}" ]] && echo false || echo true)
@@ -78,7 +78,7 @@ OUTPUT_JSON="${NEXT_ACTION_GATE_OUTPUT}" \
   --output-json "$(dirname "${CLEAN_DENSE_PREFLIGHT_SUMMARY}")/clean_dense_preflight_summary_sft_entry_gate.json"
 
 export SOURCE_DATASET_ROOT="${SOURCE_DATASET_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/sft_dataset_fix3_v7_user_override_733_rgb_512_20260612}"
-export OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_clean_dense_overfit2_rgb_300step_fix1recipe_4gpu_${STAMP}}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_clean_dense_overfit2_rgb_300step_fix1recipe_2gpu_${STAMP}}"
 
 export EXPECTED_SOURCE_EPISODES="${EXPECTED_SOURCE_EPISODES:-2}"
 export MAX_RECORDS="${MAX_RECORDS:-0}"
@@ -95,13 +95,13 @@ export LATE_REBIND_MIN_ABS_Y="${LATE_REBIND_MIN_ABS_Y:-0.01}"
 export LATE_REBIND_MIN_ABS_Z="${LATE_REBIND_MIN_ABS_Z:-0.004}"
 export MIN_LATE_REBIND_CANDIDATES="${MIN_LATE_REBIND_CANDIDATES:-1}"
 
-export NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
-export DATA_PARALLEL_SHARD_DEGREE="${DATA_PARALLEL_SHARD_DEGREE:-4}"
+export NPROC_PER_NODE="${NPROC_PER_NODE:-2}"
+export DATA_PARALLEL_SHARD_DEGREE="${DATA_PARALLEL_SHARD_DEGREE:-2}"
 export DATA_PARALLEL_REPLICATE_DEGREE="${DATA_PARALLEL_REPLICATE_DEGREE:-1}"
 export CONTEXT_PARALLEL_SHARD_DEGREE="${CONTEXT_PARALLEL_SHARD_DEGREE:-1}"
 
-export MAX_ITER="${MAX_ITER:-300}"
-export SAVE_ITER="${SAVE_ITER:-100}"
+export MAX_ITER="${MAX_ITER:-100}"
+export SAVE_ITER="${SAVE_ITER:-50}"
 export VALIDATION_ITER="${VALIDATION_ITER:-50}"
 export MAX_VAL_ITER="${MAX_VAL_ITER:-2}"
 export MASTER_PORT="${MASTER_PORT:-50363}"

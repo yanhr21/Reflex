@@ -119,6 +119,24 @@ def row_source_uuid(row: dict[str, Any]) -> str:
     return str(row.get("source_uuid") or row.get("source_sample_id") or row.get("uuid") or "unknown")
 
 
+def row_unique_key(row: dict[str, Any]) -> str:
+    return str(
+        row.get("uuid")
+        or "|".join(
+            [
+                row_scenario(row),
+                row_source_uuid(row),
+                str(row.get("prefix_role") or "unknown"),
+                str(row.get("prefix_frame_index") or "unknown"),
+            ]
+        )
+    )
+
+
+def row_source_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (row_scenario(row), row_source_uuid(row))
+
+
 def validate_row(
     row: dict[str, Any],
     *,
@@ -181,43 +199,51 @@ def validate_row(
 
 
 def choose_rows(rows: list[dict[str, Any]], num_samples: int) -> list[dict[str, Any]]:
+    if len(rows) <= num_samples:
+        return rows[:num_samples]
+
     selected: list[dict[str, Any]] = []
-    used_keys: set[tuple[str, str]] = set()
+    used_row_keys: set[str] = set()
+    used_source_keys: set[tuple[str, str]] = set()
+
+    def add_first(candidates: list[dict[str, Any]]) -> None:
+        for prefer_new_source in (True, False):
+            for row in candidates:
+                row_key = row_unique_key(row)
+                if row_key in used_row_keys:
+                    continue
+                source_key = row_source_key(row)
+                if prefer_new_source and source_key in used_source_keys and len(candidates) > 1:
+                    continue
+                selected.append(row)
+                used_row_keys.add(row_key)
+                used_source_keys.add(source_key)
+                return
 
     for role, scenario in DESIRED_ROLE_SCENARIO_PAIRS:
         candidates = [
             row for row in rows if row.get("prefix_role") == role and row_scenario(row) == scenario
         ]
-        for row in candidates:
-            key = (row_scenario(row), row_source_uuid(row))
-            if key in used_keys and len(candidates) > 1:
-                continue
-            selected.append(row)
-            used_keys.add(key)
-            break
+        add_first(candidates)
         if len(selected) >= num_samples:
             return selected[:num_samples]
 
     for role in ROLE_PRIORITY:
         candidates = [row for row in rows if row.get("prefix_role") == role]
-        for row in candidates:
-            key = (row_scenario(row), row_source_uuid(row))
-            if key in used_keys and len(candidates) > 1:
-                continue
-            selected.append(row)
-            used_keys.add(key)
-            break
+        add_first(candidates)
         if len(selected) >= num_samples:
             return selected[:num_samples]
 
     for row in rows:
-        if row in selected:
+        row_key = row_unique_key(row)
+        if row_key in used_row_keys:
             continue
-        key = (row_scenario(row), row_source_uuid(row))
-        if key in used_keys and len(selected) + 1 < num_samples:
+        source_key = row_source_key(row)
+        if source_key in used_source_keys and len(selected) + 1 < num_samples:
             continue
         selected.append(row)
-        used_keys.add(key)
+        used_row_keys.add(row_key)
+        used_source_keys.add(source_key)
         if len(selected) >= num_samples:
             break
     return selected

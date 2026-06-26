@@ -78,12 +78,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-receding-iterations", type=int, default=40)
     parser.add_argument("--action-exec-horizon", type=int, default=8)
     parser.add_argument("--dp-handoff-horizon", type=int, default=32)
+    parser.add_argument("--dp-handoff-chunk-horizon", type=int, default=0)
     parser.add_argument("--cosmos-step-handoff-gate", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--continuability-stats-json", default="")
     parser.add_argument("--continuability-stats-horizon", type=int, default=32)
     parser.add_argument("--external-target-mode", choices=("source_env_state", "none"), default="source_env_state")
     parser.add_argument("--run-cosmos-inference", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--controller-action-source",
+        choices=("cosmos_robot_action", "residual_executor", "contact_executor", "candidate_executor"),
+        default="cosmos_robot_action",
+    )
+    parser.add_argument("--executor-checkpoint", default="")
+    parser.add_argument("--candidate-outcome-scorer-checkpoint", default="")
+    parser.add_argument("--candidate-outcome-scorer-dp-margin", type=float, default=0.0)
+    parser.add_argument("--candidate-outcome-scorer-min-progress-delta", type=float, default=-1.0e9)
+    parser.add_argument("--candidate-outcome-scorer-min-continuable-prob", type=float, default=0.0)
+    parser.add_argument("--candidate-outcome-scorer-min-inserted-prob", type=float, default=0.0)
+    parser.add_argument("--candidate-outcome-scorer-score-state-abs-axis-weights", default="")
+    parser.add_argument("--candidate-outcome-scorer-score-state-target", default="")
+    parser.add_argument("--candidate-executor-short-prefix-steps", default="")
+    parser.add_argument("--source-insertion-suffix-bank", default="")
+    parser.add_argument("--source-suffix-k", type=int, default=0)
+    parser.add_argument("--source-suffix-blends", default="1.0")
+    parser.add_argument("--source-suffix-execute-steps", type=int, default=32)
+    parser.add_argument("--source-suffix-offsets", default="")
+    parser.add_argument("--source-suffix-scenario-match", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--source-suffix-query-x-weight", type=float, default=1.0)
+    parser.add_argument("--source-suffix-query-y-weight", type=float, default=2.0)
+    parser.add_argument("--source-suffix-query-z-weight", type=float, default=4.0)
+    parser.add_argument("--source-suffix-max-distance", type=float, default=-1.0)
+    parser.add_argument("--source-suffix-ignore-residual-cap", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--executor-residual-scale", type=float, default=1.0)
     parser.add_argument("--clip-live-actions", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--save-live-state-snapshots", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--save-candidate-action-bank", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--live-progress-interval", type=int, default=0)
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--expected-video-frames", type=int, default=301)
     parser.add_argument("--expected-action-steps", type=int, default=300)
@@ -228,6 +258,8 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
         str(args.action_exec_horizon),
         "--dp-handoff-horizon",
         str(args.dp_handoff_horizon),
+        "--dp-handoff-chunk-horizon",
+        str(args.dp_handoff_chunk_horizon),
         "--cosmos-step-handoff-gate" if args.cosmos_step_handoff_gate else "--no-cosmos-step-handoff-gate",
         "--external-target-mode",
         args.external_target_mode,
@@ -243,7 +275,79 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
         str(args.robot_action_dim),
         "--max-episode-steps",
         str(args.max_episode_steps),
+        "--live-progress-interval",
+        str(args.live_progress_interval),
+        "--controller-action-source",
+        args.controller_action_source,
     ]
+    if args.executor_checkpoint:
+        cmd.extend(["--executor-checkpoint", str(Path(args.executor_checkpoint).resolve())])
+    if args.candidate_outcome_scorer_checkpoint:
+        cmd.extend(
+            [
+                "--candidate-outcome-scorer-checkpoint",
+                str(Path(args.candidate_outcome_scorer_checkpoint).resolve()),
+                "--candidate-outcome-scorer-dp-margin",
+                str(args.candidate_outcome_scorer_dp_margin),
+                "--candidate-outcome-scorer-min-progress-delta",
+                str(args.candidate_outcome_scorer_min_progress_delta),
+                "--candidate-outcome-scorer-min-continuable-prob",
+                str(args.candidate_outcome_scorer_min_continuable_prob),
+                "--candidate-outcome-scorer-min-inserted-prob",
+                str(args.candidate_outcome_scorer_min_inserted_prob),
+            ]
+        )
+        if args.candidate_outcome_scorer_score_state_abs_axis_weights:
+            cmd.extend(
+                [
+                    "--candidate-outcome-scorer-score-state-abs-axis-weights",
+                    args.candidate_outcome_scorer_score_state_abs_axis_weights,
+                ]
+            )
+        if args.candidate_outcome_scorer_score_state_target:
+            cmd.extend(
+                [
+                    "--candidate-outcome-scorer-score-state-target",
+                    args.candidate_outcome_scorer_score_state_target,
+                ]
+            )
+    if args.candidate_executor_short_prefix_steps:
+        cmd.extend(
+            [
+                "--candidate-executor-short-prefix-steps",
+                args.candidate_executor_short_prefix_steps,
+            ]
+        )
+    if args.source_insertion_suffix_bank and int(args.source_suffix_k) > 0:
+        cmd.extend(
+            [
+                "--source-insertion-suffix-bank",
+                str(Path(args.source_insertion_suffix_bank).resolve()),
+                "--source-suffix-k",
+                str(args.source_suffix_k),
+                "--source-suffix-blends",
+                args.source_suffix_blends,
+                "--source-suffix-execute-steps",
+                str(args.source_suffix_execute_steps),
+                "--source-suffix-query-x-weight",
+                str(args.source_suffix_query_x_weight),
+                "--source-suffix-query-y-weight",
+                str(args.source_suffix_query_y_weight),
+                "--source-suffix-query-z-weight",
+                str(args.source_suffix_query_z_weight),
+                "--source-suffix-max-distance",
+                str(args.source_suffix_max_distance),
+                "--source-suffix-scenario-match"
+                if args.source_suffix_scenario_match
+                else "--no-source-suffix-scenario-match",
+                "--source-suffix-ignore-residual-cap"
+                if args.source_suffix_ignore_residual_cap
+                else "--no-source-suffix-ignore-residual-cap",
+            ]
+        )
+        if args.source_suffix_offsets:
+            cmd.extend(["--source-suffix-offsets", args.source_suffix_offsets])
+    cmd.extend(["--executor-residual-scale", str(args.executor_residual_scale)])
     if args.dp_checkpoint:
         cmd.extend(["--dp-checkpoint", str(Path(args.dp_checkpoint).resolve())])
     if args.continuability_stats_json:
@@ -257,6 +361,16 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
         )
     cmd.append("--run-cosmos-inference" if args.run_cosmos_inference else "--no-run-cosmos-inference")
     cmd.append("--clip-live-actions" if args.clip_live_actions else "--no-clip-live-actions")
+    cmd.append(
+        "--save-live-state-snapshots"
+        if args.save_live_state_snapshots
+        else "--no-save-live-state-snapshots"
+    )
+    cmd.append(
+        "--save-candidate-action-bank"
+        if args.save_candidate_action_bank
+        else "--no-save-candidate-action-bank"
+    )
     return cmd
 
 
@@ -420,6 +534,8 @@ def main() -> int:
         raise SystemExit("active contract requires 301 video frames and 300 action steps")
     if int(args.dp_handoff_horizon) > 0 and not args.dp_checkpoint:
         raise SystemExit("--dp-checkpoint is required when --dp-handoff-horizon > 0")
+    if args.controller_action_source in {"residual_executor", "contact_executor", "candidate_executor"} and not args.executor_checkpoint:
+        raise SystemExit(f"--executor-checkpoint is required for {args.controller_action_source} panel eval")
 
     eval_root = Path(args.eval_root).resolve()
     manifest_path = eval_root / "eval_input_manifest.json"
@@ -457,10 +573,38 @@ def main() -> int:
         "target_motion_consecutive_frames": int(args.target_motion_consecutive_frames),
         "external_target_mode": args.external_target_mode,
         "run_cosmos_inference": bool(args.run_cosmos_inference),
+        "controller_action_source": args.controller_action_source,
+        "executor_checkpoint": str(Path(args.executor_checkpoint).resolve()) if args.executor_checkpoint else None,
+        "candidate_outcome_scorer_checkpoint": (
+            str(Path(args.candidate_outcome_scorer_checkpoint).resolve())
+            if args.candidate_outcome_scorer_checkpoint
+            else None
+        ),
+        "candidate_outcome_scorer_dp_margin": float(args.candidate_outcome_scorer_dp_margin),
+        "candidate_outcome_scorer_min_progress_delta": float(args.candidate_outcome_scorer_min_progress_delta),
+        "candidate_outcome_scorer_min_continuable_prob": float(args.candidate_outcome_scorer_min_continuable_prob),
+        "candidate_outcome_scorer_min_inserted_prob": float(args.candidate_outcome_scorer_min_inserted_prob),
+        "candidate_executor_short_prefix_steps": args.candidate_executor_short_prefix_steps or None,
+        "source_insertion_suffix_bank": (
+            str(Path(args.source_insertion_suffix_bank).resolve())
+            if args.source_insertion_suffix_bank
+            else None
+        ),
+        "source_suffix_k": int(args.source_suffix_k),
+        "source_suffix_blends": args.source_suffix_blends,
+        "source_suffix_execute_steps": int(args.source_suffix_execute_steps),
+        "source_suffix_offsets": args.source_suffix_offsets or None,
+        "source_suffix_scenario_match": bool(args.source_suffix_scenario_match),
+        "source_suffix_max_distance": float(args.source_suffix_max_distance),
+        "source_suffix_ignore_residual_cap": bool(args.source_suffix_ignore_residual_cap),
+        "executor_residual_scale": float(args.executor_residual_scale),
         "max_receding_iterations": int(args.max_receding_iterations),
         "action_exec_horizon": int(args.action_exec_horizon),
         "dp_handoff_horizon": int(args.dp_handoff_horizon),
+        "dp_handoff_chunk_horizon": int(args.dp_handoff_chunk_horizon),
         "cosmos_step_handoff_gate": bool(args.cosmos_step_handoff_gate),
+        "save_live_state_snapshots": bool(args.save_live_state_snapshots),
+        "live_progress_interval": int(args.live_progress_interval),
         "continuability_stats_json": str(Path(args.continuability_stats_json).resolve()) if args.continuability_stats_json else None,
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         "slurm_step_id": os.environ.get("SLURM_STEP_ID"),

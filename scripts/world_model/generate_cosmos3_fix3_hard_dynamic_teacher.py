@@ -108,8 +108,10 @@ class Args:
     min_trigger_step: int = 45
     max_trigger_step: int = 230
     preinsert_yz_max_m: float = 0.01
+    initial_preinsert_line_yz_max_m: float = 0.0
     final_insert_offset_m: float = 0.05
     insert_step_m: float = 0.02
+    initial_preinsert_retreat_extra_m: float = 0.0
     strict_insert_x_min: float = -0.015
     strict_insert_x_max: float = 0.055
     strict_yz_radius_fraction: float = 1.0
@@ -118,6 +120,7 @@ class Args:
     strict_clearance_slack_m: float = 0.0
     anti_self_insert_final_yz_min_m: float = 0.055
     anti_self_insert_radius_multiplier: float = 2.4
+    anti_self_insert_exempt_scenarios: str = ""
     wall_x_margin_m: float = 0.002
     wall_outer_margin_m: float = 0.002
     peg_line_samples: int = 9
@@ -131,6 +134,9 @@ class Args:
     trigger_peg_tcp_dist_max: float = 0.120
     peg_disturb_delta_xyz: tuple[float, float, float] = (0.0, -0.055, 0.025)
     peg_drop_delta_y_m: float = -0.055
+    post_motion_release_regrasp_scenarios: str = ""
+    post_motion_release_regrasp_delta_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    post_motion_release_regrasp_hold_steps: int = 4
     source_kind: str = "hard_dynamic_teacher"
     scenario_sequence: str = ""
     scenario_quotas: str = ""
@@ -194,6 +200,16 @@ def _inv_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
 def _smoothstep(x: np.ndarray) -> np.ndarray:
     x = np.clip(x, 0.0, 1.0)
     return x * x * (3.0 - 2.0 * x)
+
+
+def _scenario_subset(text: str) -> set[str]:
+    if not text.strip():
+        return set()
+    out = {item.strip() for item in text.split(",") if item.strip()}
+    unknown = sorted(out - set(SCENARIOS))
+    if unknown:
+        raise ValueError(f"unknown scenario subset entries: {unknown}")
+    return out
 
 
 def _compact_axis_angle(q: np.ndarray) -> np.ndarray:
@@ -364,16 +380,26 @@ def _live_wall_collision_risk(base_env, args: Args) -> tuple[bool, dict[str, Any
     return bool(info["wall_collision_risk"]), info
 
 
-def _preinsert_ready(base_env, args: Args) -> tuple[bool, dict[str, Any]]:
+def _preinsert_ready(
+    base_env,
+    args: Args,
+    *,
+    line_yz_max_override_m: float | None = None,
+) -> tuple[bool, dict[str, Any]]:
     peg_head_goal = _goal_rel_xyz(base_env, base_env.peg_head_pose)
     peg_goal = _goal_rel_xyz(base_env, base_env.peg.pose)
     head_yz = float(np.linalg.norm(peg_head_goal[1:]))
     peg_yz = float(np.linalg.norm(peg_goal[1:]))
     line_info = _live_peg_line_gate_info(base_env, args)
+    line_yz_limit_m = (
+        float(line_yz_max_override_m)
+        if line_yz_max_override_m is not None and float(line_yz_max_override_m) > 0.0
+        else float(line_info["centerline_yz_limit_m"])
+    )
     ok = (
         head_yz <= float(args.preinsert_yz_max_m)
         and peg_yz <= float(args.preinsert_yz_max_m)
-        and line_info["centerline_yz_max_m"] <= line_info["centerline_yz_limit_m"]
+        and float(line_info["centerline_yz_max_m"]) <= line_yz_limit_m
         and not bool(line_info["wall_collision_risk"])
         and line_info["peg_axis_cos_hole_x"] >= float(args.strict_axis_cos_min)
     )
@@ -384,6 +410,7 @@ def _preinsert_ready(base_env, args: Args) -> tuple[bool, dict[str, Any]]:
         "peg_head_goal_yz_m": head_yz,
         "peg_goal_yz_m": peg_yz,
         "preinsert_yz_max_m": float(args.preinsert_yz_max_m),
+        "preinsert_line_yz_limit_m": float(line_yz_limit_m),
         **line_info,
         **axis_info,
     }
@@ -955,16 +982,29 @@ def _run_late_trigger_episode(env: RecordEpisode, scenario: str, rng: np.random.
         initial_insert_pose = base_env.goal_pose * peg_init_pose.inv() * grasp_pose
         insert_offset_m = float(-0.01 - base_env.peg_half_sizes[0, 0].item())
         insert_offset = sapien.Pose([insert_offset_m, 0, 0])
+        initial_preinsert_stage_offset_m = None
+        if float(args.initial_preinsert_retreat_extra_m) > 0.0:
+            initial_preinsert_stage_offset_m = insert_offset_m - float(args.initial_preinsert_retreat_extra_m)
         initial_pre_insert_pose = _move_to_refined_preinsert(
             base_env=base_env,
             planner=planner,
             insert_pose=initial_insert_pose,
             insert_offset=insert_offset,
+            stage_offset_m=initial_preinsert_stage_offset_m,
             refine_steps=int(args.preinsert_refine_steps),
         )
         if initial_pre_insert_pose is None:
             return _reject("planner_initial_preinsert_failed", scenario=scenario)
-        initial_preinsert_ok, initial_preinsert_info = _preinsert_ready(base_env, args)
+        initial_preinsert_line_yz_max_m = (
+            float(args.initial_preinsert_line_yz_max_m)
+            if float(args.initial_preinsert_line_yz_max_m) > 0.0
+            else None
+        )
+        initial_preinsert_ok, initial_preinsert_info = _preinsert_ready(
+            base_env,
+            args,
+            line_yz_max_override_m=initial_preinsert_line_yz_max_m,
+        )
         if not initial_preinsert_ok:
             return _reject(
                 "initial_preinsert_gate_failed",
@@ -1026,7 +1066,8 @@ def _run_late_trigger_episode(env: RecordEpisode, scenario: str, rng: np.random.
             float(args.anti_self_insert_final_yz_min_m),
             float(args.anti_self_insert_radius_multiplier) * float(anti_line_info["hole_radius_m"]),
         )
-        if float(anti_line_info["centerline_yz_max_m"]) < anti_threshold:
+        anti_exempt = scenario in _scenario_subset(str(args.anti_self_insert_exempt_scenarios))
+        if (not anti_exempt) and float(anti_line_info["centerline_yz_max_m"]) < anti_threshold:
             return _reject(
                 "target_self_insert_after_motion_gate_failed",
                 scenario=scenario,
@@ -1038,7 +1079,30 @@ def _run_late_trigger_episode(env: RecordEpisode, scenario: str, rng: np.random.
                 **anti_line_info,
             )
 
-        final_insert_pose = base_env.goal_pose * peg_init_pose.inv() * grasp_pose
+        post_motion_regrasp_done = False
+        post_motion_regrasp_delta = np.asarray(args.post_motion_release_regrasp_delta_xyz, dtype=np.float32)
+        peg_pose_for_final_insert = peg_init_pose
+        if scenario in _scenario_subset(str(args.post_motion_release_regrasp_scenarios)):
+            peg_before_release_p, peg_before_release_q = _to_np_actor_pose(base_env.peg)
+            planner.open_gripper(t=4)
+            if float(np.linalg.norm(post_motion_regrasp_delta)) > 0.0:
+                _set_peg_pose(base_env, peg_before_release_p + post_motion_regrasp_delta, peg_before_release_q)
+            for _ in range(max(1, int(args.post_motion_release_regrasp_hold_steps))):
+                env.step(_hold_action(base_env, PandaArmMotionPlanningSolver.OPEN))
+            regrasp_result = _grasp_current_peg(base_env, planner)
+            if regrasp_result is None:
+                return _reject(
+                    "planner_post_motion_regrasp_failed",
+                    scenario=scenario,
+                    trigger_step=trigger_step,
+                    move_steps=move_steps,
+                    post_motion_regrasp_delta=post_motion_regrasp_delta,
+                    post_motion_regrasp_hold_steps=int(args.post_motion_release_regrasp_hold_steps),
+                )
+            grasp_pose, peg_pose_for_final_insert = regrasp_result
+            post_motion_regrasp_done = True
+
+        final_insert_pose = base_env.goal_pose * peg_pose_for_final_insert.inv() * grasp_pose
         final_pre_insert_pose = _move_to_refined_preinsert(
             base_env=base_env,
             planner=planner,
@@ -1150,11 +1214,23 @@ def _run_late_trigger_episode(env: RecordEpisode, scenario: str, rng: np.random.
             "constrained_insert_projection_required": bool(constrained_projection_required),
             "constrained_insert_projection_max_raw_line_yz_m": float(args.max_constrained_insert_raw_line_yz_m),
             "insert_offset_m": float(insert_offset_m),
+            "initial_preinsert_stage_offset_m": (
+                float(initial_preinsert_stage_offset_m)
+                if initial_preinsert_stage_offset_m is not None
+                else None
+            ),
+            "initial_preinsert_retreat_extra_m": float(args.initial_preinsert_retreat_extra_m),
+            "initial_preinsert_line_yz_max_m": float(args.initial_preinsert_line_yz_max_m),
             "final_insert_offset_m": float(args.final_insert_offset_m),
             "insert_step_m": float(args.insert_step_m),
             "preinsert_refine_steps": int(args.preinsert_refine_steps),
             "final_insert_refine_steps": int(args.final_insert_refine_steps),
             "final_insert_settle_steps": int(args.final_insert_settle_steps),
+            "post_motion_release_regrasp_done": bool(post_motion_regrasp_done),
+            "post_motion_release_regrasp_delta_xyz": post_motion_regrasp_delta.astype(float).tolist(),
+            "post_motion_release_regrasp_hold_steps": int(args.post_motion_release_regrasp_hold_steps),
+            "anti_self_insert_exempt": bool(anti_exempt),
+            "anti_self_insert_exempt_scenarios": str(args.anti_self_insert_exempt_scenarios),
             "strict_peg_head_at_hole": head.astype(float).tolist(),
             "strict_final_line_gate": final_line_info,
             "hole_radius": float(radius),
@@ -1163,6 +1239,11 @@ def _run_late_trigger_episode(env: RecordEpisode, scenario: str, rng: np.random.
                 "motion_planner_grasp",
                 "motion_planner_preinsert_at_initial_hole",
                 "late_target_motion",
+                *(
+                    ["post_motion_release_regrasp"]
+                    if post_motion_regrasp_done
+                    else []
+                ),
                 "motion_planner_replan_to_moved_hole",
                 "motion_planner_insert",
             ],

@@ -37,7 +37,14 @@ DP_HANDOFF_HORIZON="${DP_HANDOFF_HORIZON:-64}"
 CONTINUABILITY_STATS_JSON="${CONTINUABILITY_STATS_JSON:-${ROOT}/experiments/world_model_task_rebinding/cosmos3/dp_static_continuability_stats_20260613/dp_static_continuability_stats.json}"
 CONTINUABILITY_STATS_HORIZON="${CONTINUABILITY_STATS_HORIZON:-32}"
 RUN_COSMOS_INFERENCE="${RUN_COSMOS_INFERENCE:-true}"
+CONTROLLER_ACTION_SOURCE="${CONTROLLER_ACTION_SOURCE:-cosmos_robot_action}"
+EXECUTOR_CHECKPOINT="${EXECUTOR_CHECKPOINT:-}"
+EXECUTOR_RESIDUAL_SCALE="${EXECUTOR_RESIDUAL_SCALE:-1.0}"
+CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS="${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-}"
 ALLOW_LIVE_RECEDING_DIAGNOSTIC="${ALLOW_LIVE_RECEDING_DIAGNOSTIC:-false}"
+SAVE_LIVE_STATE_SNAPSHOTS="${SAVE_LIVE_STATE_SNAPSHOTS:-false}"
+SAVE_CANDIDATE_ACTION_BANK="${SAVE_CANDIDATE_ACTION_BANK:-false}"
+LIVE_PROGRESS_INTERVAL="${LIVE_PROGRESS_INTERVAL:-0}"
 
 main() {
   cd "${ROOT}"
@@ -53,6 +60,11 @@ main() {
   fi
   if [[ "${RUN_COSMOS_INFERENCE}" != "true" ]]; then
     diagnostic_reasons+=("cosmos_inference_disabled")
+  fi
+  if [[ "${CONTROLLER_ACTION_SOURCE}" == "residual_executor" || "${CONTROLLER_ACTION_SOURCE}" == "contact_executor" || "${CONTROLLER_ACTION_SOURCE}" == "candidate_executor" ]]; then
+    if [[ ! -s "${EXECUTOR_CHECKPOINT}" ]]; then
+      diagnostic_reasons+=("missing_${CONTROLLER_ACTION_SOURCE}_checkpoint")
+    fi
   fi
   if (( ${#diagnostic_reasons[@]} > 0 )) && [[ "${ALLOW_LIVE_RECEDING_DIAGNOSTIC}" != "true" ]]; then
     {
@@ -98,6 +110,13 @@ main() {
     echo "continuability_stats_json=${CONTINUABILITY_STATS_JSON}"
     echo "continuability_stats_horizon=${CONTINUABILITY_STATS_HORIZON}"
     echo "run_cosmos_inference=${RUN_COSMOS_INFERENCE}"
+    echo "controller_action_source=${CONTROLLER_ACTION_SOURCE}"
+    echo "executor_checkpoint=${EXECUTOR_CHECKPOINT:-none}"
+    echo "executor_residual_scale=${EXECUTOR_RESIDUAL_SCALE}"
+    echo "candidate_executor_short_prefix_steps=${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-none}"
+    echo "save_live_state_snapshots=${SAVE_LIVE_STATE_SNAPSHOTS}"
+    echo "save_candidate_action_bank=${SAVE_CANDIDATE_ACTION_BANK}"
+    echo "live_progress_interval=${LIVE_PROGRESS_INTERVAL}"
     echo "allow_live_receding_diagnostic=${ALLOW_LIVE_RECEDING_DIAGNOSTIC}"
     echo "diagnostic_reasons=${diagnostic_reasons[*]:-none}"
     echo "boundary=Full-300 live receding Cosmos eval wrapper; one causal target-motion detector controls DP vs Cosmos. If the detector never fires, DP continues by the same rule; this is not a separate static-sample branch. No SFT checkpoint writes."
@@ -125,11 +144,30 @@ main() {
     --dp-handoff-horizon "${DP_HANDOFF_HORIZON}"
     --continuability-stats-json "${CONTINUABILITY_STATS_JSON}"
     --continuability-stats-horizon "${CONTINUABILITY_STATS_HORIZON}"
+    --live-progress-interval "${LIVE_PROGRESS_INTERVAL}"
+    --controller-action-source "${CONTROLLER_ACTION_SOURCE}"
+    --executor-residual-scale "${EXECUTOR_RESIDUAL_SCALE}"
   )
+  if [[ -n "${EXECUTOR_CHECKPOINT}" ]]; then
+    args+=(--executor-checkpoint "${EXECUTOR_CHECKPOINT}")
+  fi
+  if [[ -n "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}" ]]; then
+    args+=(--candidate-executor-short-prefix-steps "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}")
+  fi
   if [[ "${RUN_COSMOS_INFERENCE}" == "true" ]]; then
     args+=(--run-cosmos-inference)
   else
     args+=(--no-run-cosmos-inference)
+  fi
+  if [[ "${SAVE_LIVE_STATE_SNAPSHOTS}" == "true" ]]; then
+    args+=(--save-live-state-snapshots)
+  else
+    args+=(--no-save-live-state-snapshots)
+  fi
+  if [[ "${SAVE_CANDIDATE_ACTION_BANK}" == "true" ]]; then
+    args+=(--save-candidate-action-bank)
+  else
+    args+=(--no-save-candidate-action-bank)
   fi
 
   "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/run_cosmos3_live_receding_loop.py" "${args[@]}"

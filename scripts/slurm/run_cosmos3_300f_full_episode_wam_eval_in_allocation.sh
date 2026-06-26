@@ -30,6 +30,7 @@ TOTAL_ACTION_STEPS="${TOTAL_ACTION_STEPS:-300}"
 ACTION_DIM="${ACTION_DIM:-32}"
 RUN_INFERENCE="${RUN_INFERENCE:-true}"
 RUN_INSPECTION="${RUN_INSPECTION:-true}"
+SKIP_BUILD_EVAL_INPUTS="${SKIP_BUILD_EVAL_INPUTS:-false}"
 INFERENCE_NUM_STEPS="${INFERENCE_NUM_STEPS:-30}"
 LIBFFI_COMPAT_DIR="${LIBFFI_COMPAT_DIR:-${COSMOS_VENV}/lib_compat}"
 
@@ -101,6 +102,7 @@ write_manifest() {
     echo "checkpoint_path=${CHECKPOINT_PATH_RESOLVED}"
     echo "eval_root=${EVAL_ROOT}"
     echo "eval_input_jsonl=${EVAL_INPUT_JSONL}"
+    echo "skip_build_eval_inputs=${SKIP_BUILD_EVAL_INPUTS}"
     echo "total_video_frames=${TOTAL_VIDEO_FRAMES}"
     echo "total_action_steps=${TOTAL_ACTION_STEPS}"
     echo "action_dim=${ACTION_DIM}"
@@ -124,15 +126,39 @@ main() {
   repair_transformer_engine_cudart_path
   refresh_cosmos_ld_library_path
 
-  "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/build_cosmos3_full_episode_wam_eval_inputs.py" \
-    --condition-root "${CONDITION_ROOT}" \
-    --output-root "${EVAL_ROOT}" \
-    --split val \
-    --num-samples "${N_EVAL_SAMPLES}" \
-    --expected-video-frames "${TOTAL_VIDEO_FRAMES}" \
-    --expected-action-steps "${TOTAL_ACTION_STEPS}" \
-    --expected-action-dim "${ACTION_DIM}" \
-    2>&1 | tee "${EVAL_ROOT}/build_eval_inputs.log"
+  if [[ "${SKIP_BUILD_EVAL_INPUTS}" == "true" ]]; then
+    [[ -s "${EVAL_INPUT_JSONL}" ]] || {
+      echo "missing prebuilt eval input JSONL: ${EVAL_INPUT_JSONL}" >&2
+      exit 33
+    }
+    local prebuilt_input_root
+    local prebuilt_manifest
+    prebuilt_input_root="$(dirname "$(dirname "${EVAL_INPUT_JSONL}")")"
+    prebuilt_manifest="${prebuilt_input_root}/eval_input_manifest.json"
+    [[ -s "${prebuilt_manifest}" ]] || {
+      echo "missing prebuilt eval input manifest: ${prebuilt_manifest}" >&2
+      exit 34
+    }
+    cp "${prebuilt_manifest}" "${EVAL_ROOT}/eval_input_manifest.json"
+    {
+      echo "timestamp=$(date -Is)"
+      echo "skip_build_eval_inputs=true"
+      echo "prebuilt_eval_input_jsonl=${EVAL_INPUT_JSONL}"
+      echo "prebuilt_eval_input_manifest=${prebuilt_manifest}"
+      echo "copied_eval_input_manifest=${EVAL_ROOT}/eval_input_manifest.json"
+      echo "reason=executor-targeted Cosmos inference uses a prebuilt role/scenario-balanced input manifest."
+    } | tee "${EVAL_ROOT}/build_eval_inputs.log"
+  else
+    "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/build_cosmos3_full_episode_wam_eval_inputs.py" \
+      --condition-root "${CONDITION_ROOT}" \
+      --output-root "${EVAL_ROOT}" \
+      --split val \
+      --num-samples "${N_EVAL_SAMPLES}" \
+      --expected-video-frames "${TOTAL_VIDEO_FRAMES}" \
+      --expected-action-steps "${TOTAL_ACTION_STEPS}" \
+      --expected-action-dim "${ACTION_DIM}" \
+      2>&1 | tee "${EVAL_ROOT}/build_eval_inputs.log"
+  fi
 
   if [[ "${RUN_INFERENCE}" == "true" ]]; then
     bash -lc "

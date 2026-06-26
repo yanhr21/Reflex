@@ -1,0 +1,12 @@
+schema=openpi_pi05_peg733_resume_train_manual_v1
+date=2026-06-25T21:04:35+08:00
+root=/public/home/yanhongru/ICLR2027/Reflex
+openpi_root=/public/home/yanhongru/ICLR2027/openpi
+slurm_job_id=150773
+base_exp=pi05_peg733_1gpu1h_20260625_after_nfs_enolck_localckpt_1600_skipnorm_alloc150773
+checkpoint_base_dir=/tmp/openpi_pi05_checkpoints_yanhongru_150773_local
+resume=true
+num_train_steps=4000
+save_interval=1200
+method_boundary=Official OpenPI scripts/train.py resume only; no custom VAE/MLP/diffusion intermediate model.
+reason=1600-step panel4 saved-snapshot replay preserved grasp but direct insertion remains 0/4; continue official pi0.5 finetune.

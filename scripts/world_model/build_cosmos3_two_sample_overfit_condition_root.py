@@ -15,7 +15,7 @@ from typing import Any
 
 
 DEFAULT_PAIRS = (
-    ("target_motion_observed", "hole_late_move_stop"),
+    ("target_post_motion", "hole_late_move_stop"),
     ("peg_recovery", "peg_drop"),
 )
 

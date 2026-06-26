@@ -1,0 +1,12 @@
+{
+  "config_name": "pi05_maniskill_peg733",
+  "exp_name": "pi05_peg733_1gpu1h_20260625_after_official_pi05_params_cache_repair_skipnorm_alloc150773",
+  "elapsed_seconds": 36,
+  "min_wall_seconds": 3660,
+  "formal_one_gpu_hour_floor_met": false,
+  "train_return_code": 1,
+  "slurm_job_id": "150773",
+  "slurm_step_id": "0",
+  "checkpoint_base_dir": "/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/openpi/checkpoints",
+  "note": "Elapsed starts at official train.py launch. Weight download time may be included in wall time, so optimization-step logs are still required before interpreting training quality."
+}

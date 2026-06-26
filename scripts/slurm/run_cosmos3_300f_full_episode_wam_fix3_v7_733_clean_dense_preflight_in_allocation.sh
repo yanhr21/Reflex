@@ -17,6 +17,8 @@ export RUN_SFT="${RUN_SFT:-false}"
 
 export PREFIX_ROLE_SOURCE="${PREFIX_ROLE_SOURCE:-physical_mode}"
 export DENSE_RECEDING_PREFIX_STRIDE="${DENSE_RECEDING_PREFIX_STRIDE:-8}"
+export MIN_PREFIX_FRAMES="${MIN_PREFIX_FRAMES:-12}"
+export MAX_PREFIX_FRAMES="${MAX_PREFIX_FRAMES:-260}"
 export ROLE_WEIGHT_CONFIG="${ROLE_WEIGHT_CONFIG:-}"
 export LATE_REBIND_WEIGHT="${LATE_REBIND_WEIGHT:-3}"
 export LATE_REBIND_ROLES="${LATE_REBIND_ROLES:-target_motion_observed,target_post_motion,insert_resume}"
@@ -48,6 +50,8 @@ force_export=${FORCE_EXPORT}
 run_sft=${RUN_SFT}
 prefix_role_source=${PREFIX_ROLE_SOURCE}
 dense_receding_prefix_stride=${DENSE_RECEDING_PREFIX_STRIDE}
+min_prefix_frames=${MIN_PREFIX_FRAMES}
+max_prefix_frames=${MAX_PREFIX_FRAMES}
 late_rebind_weight=${LATE_REBIND_WEIGHT}
 late_rebind_roles=${LATE_REBIND_ROLES}
 late_rebind_min_abs_x=${LATE_REBIND_MIN_ABS_X}

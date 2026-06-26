@@ -1,0 +1,12 @@
+{
+  "config_name": "pi05_maniskill_peg733",
+  "exp_name": "pi05_peg733_1gpu1h_20260625_after_nfs_enolck_localckpt_1600_skipnorm_alloc150773",
+  "elapsed_seconds": 4152,
+  "min_wall_seconds": 3660,
+  "formal_one_gpu_hour_floor_met": true,
+  "train_return_code": 0,
+  "slurm_job_id": "150773",
+  "slurm_step_id": "2",
+  "checkpoint_base_dir": "/tmp/openpi_pi05_checkpoints_yanhongru_150773_local",
+  "note": "Elapsed starts at official train.py launch. Weight download time may be included in wall time, so optimization-step logs are still required before interpreting training quality."
+}

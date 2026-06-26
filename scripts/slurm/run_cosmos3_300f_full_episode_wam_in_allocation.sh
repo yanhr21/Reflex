@@ -64,6 +64,8 @@ STRICT_FULL_PREFLIGHT="${STRICT_FULL_PREFLIGHT:-true}"
 SIDECAR_TARGET_MODE="${SIDECAR_TARGET_MODE:-future_aligned_state}"
 PREFIX_ROLE_SOURCE="${PREFIX_ROLE_SOURCE:-sampled}"
 DENSE_RECEDING_PREFIX_STRIDE="${DENSE_RECEDING_PREFIX_STRIDE:-0}"
+MIN_PREFIX_FRAMES="${MIN_PREFIX_FRAMES:-12}"
+MAX_PREFIX_FRAMES="${MAX_PREFIX_FRAMES:-260}"
 ROLE_WEIGHT_CONFIG="${ROLE_WEIGHT_CONFIG:-}"
 LATE_REBIND_WEIGHT="${LATE_REBIND_WEIGHT:-1}"
 LATE_REBIND_ROLES="${LATE_REBIND_ROLES:-target_motion_observed,target_post_motion,insert_resume}"
@@ -79,11 +81,40 @@ LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE="${LIVE_QUERY_COVERAGE_REL_YZ_TOLERANCE:-0.
 LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT="${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT:-0}"
 LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION="${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION:-0.0}"
 CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON="${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON:-}"
+CLEAN_DENSE_PREFLIGHT_SUMMARY="${CLEAN_DENSE_PREFLIGHT_SUMMARY:-}"
+ALLOW_CLEAN_DENSE_SFT_WITHOUT_READY_SUMMARY_DIAGNOSTIC="${ALLOW_CLEAN_DENSE_SFT_WITHOUT_READY_SUMMARY_DIAGNOSTIC:-false}"
+TEST_CLEAN_DENSE_SFT_READINESS_GUARD_ONLY="${TEST_CLEAN_DENSE_SFT_READINESS_GUARD_ONLY:-false}"
 FORCE_EXPORT="${FORCE_EXPORT:-false}"
 RUN_SFT="${RUN_SFT:-true}"
 
+abs_under_root() {
+  local path="$1"
+  if [[ -z "${path}" ]]; then
+    printf '%s\n' ""
+  elif [[ "${path}" == /* ]]; then
+    printf '%s\n' "${path}"
+  else
+    printf '%s/%s\n' "${ROOT}" "${path}"
+  fi
+}
+
+SOURCE_DATASET_ROOT="$(abs_under_root "${SOURCE_DATASET_ROOT}")"
+CONDITION_ROOT="$(abs_under_root "${CONDITION_ROOT}")"
+OUTPUT_ROOT="$(abs_under_root "${OUTPUT_ROOT}")"
+FIX3_USER_APPROVAL_FILE="$(abs_under_root "${FIX3_USER_APPROVAL_FILE}")"
+BASE_CHECKPOINT_PATH="$(abs_under_root "${BASE_CHECKPOINT_PATH}")"
+WAN_VAE_PATH="$(abs_under_root "${WAN_VAE_PATH}")"
+COSMOS_VENV="$(abs_under_root "${COSMOS_VENV}")"
+LOCAL_TOKENIZER_DIR="$(abs_under_root "${LOCAL_TOKENIZER_DIR}")"
+SFT_TOML="$(abs_under_root "${SFT_TOML}")"
+if [[ -n "${CLEAN_DENSE_PREFLIGHT_SUMMARY}" ]]; then
+  CLEAN_DENSE_PREFLIGHT_SUMMARY="$(abs_under_root "${CLEAN_DENSE_PREFLIGHT_SUMMARY}")"
+fi
+
 TRAIN_JSONL="${TRAIN_JSONL:-${CONDITION_ROOT}/train/video_action_dataset_file.jsonl}"
 VAL_JSONL="${VAL_JSONL:-${CONDITION_ROOT}/val/video_action_dataset_file.jsonl}"
+TRAIN_JSONL="$(abs_under_root "${TRAIN_JSONL}")"
+VAL_JSONL="$(abs_under_root "${VAL_JSONL}")"
 
 find_cosmos_ffmpeg_bin() {
   local bin
@@ -215,6 +246,8 @@ write_manifest() {
     echo "sidecar_target_mode=${SIDECAR_TARGET_MODE}"
     echo "prefix_role_source=${PREFIX_ROLE_SOURCE}"
     echo "dense_receding_prefix_stride=${DENSE_RECEDING_PREFIX_STRIDE}"
+    echo "min_prefix_frames=${MIN_PREFIX_FRAMES}"
+    echo "max_prefix_frames=${MAX_PREFIX_FRAMES}"
     echo "role_weight_config=${ROLE_WEIGHT_CONFIG}"
     echo "late_rebind_weight=${LATE_REBIND_WEIGHT}"
     echo "late_rebind_roles=${LATE_REBIND_ROLES}"
@@ -230,6 +263,8 @@ write_manifest() {
     echo "live_query_coverage_max_undercovered_count=${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_COUNT}"
     echo "live_query_coverage_max_undercovered_fraction=${LIVE_QUERY_COVERAGE_MAX_UNDERCOVERED_FRACTION}"
     echo "clean_dense_preflight_diagnostic_not_ready_reason=${CLEAN_DENSE_PREFLIGHT_DIAGNOSTIC_NOT_READY_REASON}"
+    echo "clean_dense_preflight_summary=${CLEAN_DENSE_PREFLIGHT_SUMMARY}"
+    echo "allow_clean_dense_sft_without_ready_summary_diagnostic=${ALLOW_CLEAN_DENSE_SFT_WITHOUT_READY_SUMMARY_DIAGNOSTIC}"
     echo "visual_input=RGB only; depth is not used"
     echo "data_contract=301 RGB/state frames and 300 action/state rows per row; no 128-frame sampling; no 129-frame sliced t2w window; no min(pred,ref) metrics"
     echo "physical_reason=learn when the target hole starts moving, predict its path/final task frame, and jointly predict executable robot/peg/contact continuation under full-episode supervision"
@@ -295,6 +330,60 @@ validate_action_training_recipe() {
     exit 65
   fi
   echo "fix1_action_recipe_check=passed" | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
+}
+
+clean_dense_sft_requested() {
+  [[ "${PREFIX_ROLE_SOURCE}" == "physical_mode" || "${DENSE_RECEDING_PREFIX_STRIDE}" != "0" ]]
+}
+
+validate_clean_dense_sft_readiness() {
+  if [[ "${RUN_SFT}" != "true" ]]; then
+    return
+  fi
+  if ! clean_dense_sft_requested; then
+    return
+  fi
+  if [[ "${ALLOW_CLEAN_DENSE_SFT_WITHOUT_READY_SUMMARY_DIAGNOSTIC}" == "true" ]]; then
+    {
+      echo "clean_dense_sft_readiness_check=diagnostic_override"
+      echo "allow_clean_dense_sft_without_ready_summary_diagnostic=true"
+      echo "boundary=This training must not be reported as method evidence."
+    } | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
+    return
+  fi
+
+  local summary_path="${CLEAN_DENSE_PREFLIGHT_SUMMARY}"
+  if [[ -z "${summary_path}" ]]; then
+    summary_path="${OUTPUT_ROOT}/clean_dense_preflight_summary.json"
+  fi
+  if [[ ! -s "${summary_path}" ]]; then
+    cat >&2 <<EOF
+refusing_clean_dense_sft_without_ready_summary=true
+condition_root=${CONDITION_ROOT}
+output_root=${OUTPUT_ROOT}
+clean_dense_preflight_summary=${summary_path}
+reason=Clean/dense SFT requires a matching non-diagnostic clean_dense_preflight_summary.json with ready_for_overfit=true before training can start.
+override_for_non_method_diagnostic=ALLOW_CLEAN_DENSE_SFT_WITHOUT_READY_SUMMARY_DIAGNOSTIC=true
+EOF
+    exit 68
+  fi
+  local ready_gate_args=(
+    --summary-json "${summary_path}"
+    --condition-root "${CONDITION_ROOT}"
+    --output-json "${OUTPUT_ROOT}/clean_dense_preflight_summary_sft_entry_gate.json"
+  )
+  if [[ "${ALLOW_LIVE_QUERY_COVERAGE_GAP_FOR_FULL_SFT:-false}" == "true" ]]; then
+    ready_gate_args+=(
+      --allow-user-overridden-live-query-coverage-gap
+      --override-note "2026-06-14 user override: run dense late299 full SFT first; record live-query coverage gap as limitation, not launch blocker."
+    )
+  fi
+  "${ROOT}/.venv/bin/python" "${ROOT}/scripts/world_model/check_cosmos3_clean_dense_preflight_summary_ready.py" "${ready_gate_args[@]}"
+  echo "clean_dense_sft_readiness_check=passed" | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
+  echo "clean_dense_preflight_summary=${summary_path}" | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
+  if [[ "${ALLOW_LIVE_QUERY_COVERAGE_GAP_FOR_FULL_SFT:-false}" == "true" ]]; then
+    echo "clean_dense_live_query_coverage_gap_user_override=true" | tee -a "${OUTPUT_ROOT}/sft_manifest.txt"
+  fi
 }
 
 fix3_approval_required() {
@@ -368,6 +457,8 @@ export_conditions() {
       --sidecar-target-mode '${SIDECAR_TARGET_MODE}' \
       --prefix-role-source '${PREFIX_ROLE_SOURCE}' \
       --dense-receding-prefix-stride '${DENSE_RECEDING_PREFIX_STRIDE}' \
+      --min-prefix-frames '${MIN_PREFIX_FRAMES}' \
+      --max-prefix-frames '${MAX_PREFIX_FRAMES}' \
       --temporal-compression-factor '${TEMPORAL_COMPRESSION_FACTOR}' \
       --progress-every 10
   " 2>&1 | tee "${OUTPUT_ROOT}/condition_export.log"
@@ -485,6 +576,7 @@ run_sft() {
     return
   fi
   preflight_fix3_user_approval_for_sft
+  validate_clean_dense_sft_readiness
 
   FFMPEG_BIN="${FFMPEG_BIN:-$(find_cosmos_ffmpeg_bin || true)}"
   COSMOS_LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
@@ -595,5 +687,12 @@ main() {
   run_sft
   date -Is > "${OUTPUT_ROOT}/sft_completed"
 }
+
+if [[ "${TEST_CLEAN_DENSE_SFT_READINESS_GUARD_ONLY}" == "true" ]]; then
+  mkdir -p "${OUTPUT_ROOT}"
+  : > "${OUTPUT_ROOT}/sft_manifest.txt"
+  validate_clean_dense_sft_readiness
+  exit 0
+fi
 
 main "$@"

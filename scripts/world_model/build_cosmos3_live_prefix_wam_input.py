@@ -202,7 +202,28 @@ def build_raw_action_state(args: argparse.Namespace) -> tuple[np.ndarray, dict[s
         # zero and unconditioned so source H5 future object states are not
         # available to controller-facing inference.
         raw[:prefix_frame] = full_raw[:prefix_frame]
-        payload = _prefix_payload(arrays, {"frame_labels": [{"mode": args.prefix_role, "mode_id": -1, "target_started": False, "peg_needs_recovery": False, "insert_resume_candidate": False, "grasped": False, "inserted": False}] * args.total_video_frames}, prefix_frame, args.prefix_role)
+        target_started = args.prefix_role != "target_pre_motion"
+        payload = _prefix_payload(
+            arrays,
+            {
+                "frame_labels": [
+                    {
+                        "mode": args.prefix_role,
+                        "mode_id": -1,
+                        "target_started": target_started,
+                        "peg_needs_recovery": False,
+                        "insert_resume_candidate": args.prefix_role == "insert_resume",
+                        "grasped": True,
+                        "inserted": False,
+                    }
+                ]
+                * args.total_video_frames
+            },
+            prefix_frame,
+            args.prefix_role,
+            args.prefix_role,
+            "live_prefix_source_h5",
+        )
         source_summary.update(
             {
                 "source": "source_h5_observed_history_rows_only",

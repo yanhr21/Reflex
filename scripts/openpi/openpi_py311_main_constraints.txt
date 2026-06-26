@@ -1,0 +1,27 @@
+# Constraints copied from the official OpenPI uv.lock resolution.
+# Used only when cluster uv sync is blocked and a Python 3.11 pip environment
+# is needed for the same official OpenPI code/weights.
+datasets==3.6.0
+diffusers==0.33.1
+fsspec==2025.3.0
+gcsfs==2025.3.0
+huggingface-hub==0.32.3
+jax==0.5.3
+jax-cuda12-pjrt==0.5.3
+jax-cuda12-plugin==0.5.3
+jaxlib==0.5.3
+ml-dtypes==0.4.1
+numpydantic==1.6.9
+opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
+polars==1.30.0
+rerun-sdk==0.23.1
+scipy==1.15.3
+tensorstore==0.1.74
+torch==2.7.1
+torchcodec==0.4.0
+torchvision==0.22.1
+transformers==4.53.2
+tyro==0.9.22
+wandb==0.19.11
+zarr==3.0.8

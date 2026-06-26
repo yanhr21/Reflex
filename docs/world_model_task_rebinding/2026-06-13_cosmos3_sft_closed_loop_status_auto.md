@@ -1,6 +1,6 @@
 # Cosmos3 SFT Closed-Loop Status
 
-- generated_at: `2026-06-14T10:26:42.778284+08:00`
+- generated_at: `2026-06-14T12:47:38.824923+08:00`
 - sft_root: `/public/home/yanhongru/ICLR2027/Reflex/experiments/world_model_task_rebinding/cosmos3/sft_full_episode_wam_fix3_v7_733_rgb_300step_fix1recipe_4gpu_20260612_191745`
 - active_matching_process_count: `0`
 - slurm_extern_only: `False`

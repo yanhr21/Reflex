@@ -1,0 +1,3 @@
+skip_existing_norm_stats=true
+norm_stats_path=/public/home/yanhongru/ICLR2027/openpi/assets/pi05_maniskill_peg733/yanhongru/maniskill_peg733_openpi_libero/norm_stats.json
+reason=Existing OpenPI norm_stats.json found for pi05_maniskill_peg733; skipping duplicate stats pass.
