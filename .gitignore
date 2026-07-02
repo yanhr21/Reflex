@@ -3,6 +3,7 @@
 .venv_*/
 __pycache__/
 *.py[cod]
+tools/py_shims/
 
 # Third-party/vendor checkouts kept locally, not in this project repo
 deps/
@@ -17,6 +18,7 @@ logs/
 # be force-added when they are evidence records.
 /legacy/
 experiments/_archive*/
+experiments/maniskill/
 experiments/dp_peg1000/
 experiments/world_model_task_rebinding/cosmos3/
 experiments/world_model_task_rebinding/openpi/*_alloc*/

@@ -55,11 +55,14 @@ Run experiments in this order:
 1. Reproduce whether the DP checkpoint works on static ManiSkill.
 2. Check whether RGB Cosmos-3 can imagine future video and produce an
    action/task chart.
-3. Combine DP and Cosmos to locate the exact failing step, with visualization.
-4. Test the corrected Oracle boundary.
+3. Build the bridge that connects the static DP skill to the dynamic scene
+   using RGB Cosmos-3 evidence. This bridge is the method direction.
+4. Test the corrected Oracle boundary only as an explicitly labeled upper-bound
+   diagnostic for the bridge.
 5. Test live control without Oracle.
 
-Do not jump to Oracle or live control before Phases 01 and 02 are understood.
+Do not jump to Oracle or live control before Phases 01, 02, and the bridge
+interface in Phase 03 are understood.
 
 Phase docs must use short numbered folders only:
 
@@ -70,6 +73,10 @@ Do not create date-prefixed phase folders or long nested plan names.
 
 ## Priority 3: Oracle Boundary
 
+Oracle is not the paper claim and not the method. The method direction is the
+bridge from static training to dynamic deployment. Oracle only tests whether
+that bridge has identified a meaningful upper-bound finish condition.
+
 The corrected Oracle boundary is:
 
 1. start from reset;
@@ -77,8 +84,10 @@ The corrected Oracle boundary is:
 3. detect target / hole motion causally from live observations;
 4. run RGB Cosmos-3 imagination from live RGB history after target motion is
    detected;
-5. only after Cosmos output exists, allow an explicitly labeled Oracle
-   final-seat step.
+5. run the bridge output that connects Cosmos evidence to the static skill
+   deployment decision;
+6. only after Cosmos and bridge outputs exist, allow an explicitly labeled
+   Oracle final-seat step.
 
 Required Oracle evidence:
 
@@ -152,7 +161,8 @@ Do not blame physics, Git, or external tooling without direct evidence.
 
 ## Priority 6: Live Method Standard
 
-After Oracle validation, deployed method claims require:
+After Oracle validation and any later bridge design work, deployed method
+claims require:
 
 - reset-to-end live ManiSkill rollout;
 - causal target-motion detection;
