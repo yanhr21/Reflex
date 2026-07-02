@@ -34,8 +34,11 @@ from export_cosmos3_candidate_outcome_labels import (  # noqa: E402
 from run_cosmos3_live_receding_loop import (  # noqa: E402
     apply_external_target_pose,
     continuability_gate,
+    execute_scripted_insertion_primitive,
     fill_live_history_row,
     live_pose_row,
+    load_scripted_source_pose_anchor,
+    load_scripted_terminal_pose_anchor,
     read_state_obs,
     require_compute_step,
 )
@@ -178,6 +181,86 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dp-rollout-continuability-horizon", type=int, default=0)
     parser.add_argument("--dp-rollout-continuability-min-stable-steps", type=int, default=4)
+    parser.add_argument(
+        "--scripted-insertion-after-dp-rollout",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "After a label-only DP rollout, try the same programmed scripted "
+            "insertion primitive used by the live controller. This remains "
+            "saved-snapshot labeling, not method success."
+        ),
+    )
+    parser.add_argument("--expected-action-steps", type=int, default=300)
+    parser.add_argument("--expected-action-dim", type=int, default=27)
+    parser.add_argument("--render-live-video", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--full-episode-rollout", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--scripted-insertion-mode",
+        choices=("disabled", "near_hole_gate"),
+        default="disabled",
+    )
+    parser.add_argument("--scripted-insertion-action", default="0,0,0,-0.015,0.035,0.005,-1")
+    parser.add_argument(
+        "--scripted-insertion-action-frame",
+        choices=(
+            "fixed",
+            "hole_frame",
+            "hole_frame_servo",
+            "hole_frame_peg_pose_rot_servo",
+            "hole_frame_peg_pose_rot_servo_keep_gripper",
+        ),
+        default="hole_frame_servo",
+    )
+    parser.add_argument("--scripted-insertion-step-rel-x", type=float, default=0.32)
+    parser.add_argument("--scripted-insertion-lateral-gain", type=float, default=10.0)
+    parser.add_argument("--scripted-insertion-max-lateral-step", type=float, default=0.12)
+    parser.add_argument("--scripted-insertion-action-target-source-frame", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-action-target-gain", type=float, default=10.0)
+    parser.add_argument("--scripted-insertion-action-target-rot-gain", type=float, default=3.0)
+    parser.add_argument("--scripted-insertion-action-target-rot-cap", type=float, default=0.35)
+    parser.add_argument(
+        "--scripted-insertion-action-target-rot-source",
+        choices=("peg", "tcp"),
+        default="peg",
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-target-l2", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-latch", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--scripted-insertion-contact-seat-step-rel-x", type=float, default=0.06)
+    parser.add_argument("--scripted-insertion-contact-seat-lateral-gain", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-lateral-step", type=float, default=0.02)
+    parser.add_argument("--scripted-insertion-contact-seat-min-servo-steps", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-contact-seat-max-servo-l2", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-servo-steps", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-contact-seat-plateau-window", type=int, default=0)
+    parser.add_argument("--scripted-insertion-contact-seat-plateau-max-l2", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-improvement-epsilon", type=float, default=0.0005)
+    parser.add_argument("--scripted-insertion-anchor-stop-on-target-regression", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--scripted-insertion-anchor-regression-tolerance", type=float, default=0.0005)
+    parser.add_argument("--scripted-insertion-lateral-sign", type=float, default=1.0)
+    parser.add_argument("--scripted-insertion-z-sign", type=float, default=1.0)
+    parser.add_argument("--scripted-insertion-axis-only-after-step", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-ignore-grasp-after-trigger", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--scripted-insertion-max-steps", type=int, default=8)
+    parser.add_argument("--scripted-insertion-min-rel-x", type=float, default=-0.04)
+    parser.add_argument("--scripted-insertion-max-rel-x", type=float, default=0.03)
+    parser.add_argument("--scripted-insertion-max-abs-y", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-abs-z", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-hole-speed", type=float, default=0.01)
+    parser.add_argument("--scripted-insertion-require-grasp", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--scripted-insertion-stop-on-gate-fail", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--scripted-insertion-terminal-pose-gate",
+        choices=("disabled", "source_anchor"),
+        default="disabled",
+    )
+    parser.add_argument("--scripted-insertion-terminal-anchor-source-frame", type=int, default=165)
+    parser.add_argument("--scripted-insertion-terminal-max-rel-l2", type=float, default=0.01)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-pos-l2", type=float, default=0.02)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-rot-rad", type=float, default=0.20)
+    parser.add_argument("--scripted-insertion-terminal-max-tcp-hole-pos-l2", type=float, default=0.08)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-pos-l2", type=float, default=0.05)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-rot-rad", type=float, default=0.05)
     parser.add_argument("--contact-stable-min-rel-x", type=float, default=-0.06)
     parser.add_argument("--contact-stable-max-rel-x", type=float, default=0.03)
     parser.add_argument("--contact-stable-max-abs-y", type=float, default=0.018)
@@ -405,10 +488,20 @@ def sample_summary_paths(panel_root: Path) -> list[Path]:
     return sorted(best_by_dir.values())
 
 
-def iter_dirs_for_summary(summary_path: Path, max_iter_dirs: int) -> list[Path]:
+def iter_prefix_from_dir(iter_dir: Path) -> tuple[int, int]:
+    match = re.search(r"iter_(\d+)_prefix_f(\d+)$", iter_dir.name)
+    if not match:
+        raise ValueError(f"cannot parse iteration/prefix from {iter_dir}")
+    return int(match.group(1)), int(match.group(2))
+
+
+def iter_dirs_for_summary(summary_path: Path, max_iter_dirs: int, include_snapshot_only: bool = False) -> list[Path]:
     dirs: list[Path] = []
-    for bank in sorted(summary_path.parent.glob("iter_*_prefix_f*/candidate_action_bank.npz")):
-        iter_dir = bank.parent
+    if include_snapshot_only:
+        candidates = [path for path in summary_path.parent.glob("iter_*_prefix_f*") if path.is_dir()]
+    else:
+        candidates = [bank.parent for bank in summary_path.parent.glob("iter_*_prefix_f*/candidate_action_bank.npz")]
+    for iter_dir in sorted(candidates):
         if not (iter_dir / "live_state_before_controller.h5").exists():
             continue
         if not (iter_dir / "live_history_raw_action_state.json").exists():
@@ -530,7 +623,7 @@ def source_suffix_candidates(
     source_bank: dict[str, np.ndarray] | None,
     scenario: str,
     query_rel: np.ndarray,
-    dp_prior_actions: np.ndarray,
+    dp_prior_actions: np.ndarray | None,
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
     if source_bank is None or int(args.source_suffix_k) <= 0:
@@ -566,16 +659,29 @@ def source_suffix_candidates(
         scored.append((dist, idx))
     scored.sort(key=lambda item: item[0])
 
-    dp_prior = np.asarray(dp_prior_actions, dtype=np.float32)[:, : int(args.robot_action_dim)]
     blends = parse_floats(str(args.source_suffix_blends))
+    pure_source_only = dp_prior_actions is None
+    if pure_source_only and any(float(blend) != 1.0 for blend in blends):
+        raise ValueError(
+            "snapshot-only source suffix replay has no saved DP prior; "
+            "use --source-suffix-blends 1.0 or replay a directory with candidate_action_bank.npz"
+        )
+    dp_prior = (
+        None
+        if dp_prior_actions is None
+        else np.asarray(dp_prior_actions, dtype=np.float32)[:, : int(args.robot_action_dim)]
+    )
     out: list[dict[str, Any]] = []
     for rank, (dist, source_idx) in enumerate(scored[: int(args.source_suffix_k)]):
         source_actions = np.asarray(source_actions_all[source_idx], dtype=np.float32)[:, : int(args.robot_action_dim)]
-        horizon = min(int(dp_prior.shape[0]), int(source_actions.shape[0]))
+        horizon = int(source_actions.shape[0]) if dp_prior is None else min(int(dp_prior.shape[0]), int(source_actions.shape[0]))
         if horizon <= 0:
             continue
         for blend in blends:
-            actions = (1.0 - float(blend)) * dp_prior[:horizon] + float(blend) * source_actions[:horizon]
+            if dp_prior is None:
+                actions = source_actions[:horizon]
+            else:
+                actions = (1.0 - float(blend)) * dp_prior[:horizon] + float(blend) * source_actions[:horizon]
             execute_steps = int(args.source_suffix_execute_steps)
             if execute_steps <= 0:
                 execute_steps = min(horizon, int(valid_steps[source_idx]))
@@ -595,6 +701,8 @@ def source_suffix_candidates(
                         "source_suffix_distance": float(dist),
                         "source_suffix_index": int(source_idx),
                         "source_suffix_blend": float(blend),
+                        "source_suffix_has_dp_prior_blend_base": bool(dp_prior is not None),
+                        "source_suffix_snapshot_only_pure_replay": bool(pure_source_only),
                         "source_suffix_offset_before_insert": int(offsets[source_idx]),
                         "source_suffix_valid_steps": int(valid_steps[source_idx]),
                         "source_suffix_scenario": scenarios[source_idx] if scenarios else None,
@@ -863,6 +971,45 @@ def thresholds_from_summary(args: argparse.Namespace, summary: dict[str, Any]) -
     return out
 
 
+def attach_scripted_anchors(args: argparse.Namespace, source_h5: Path) -> None:
+    args.scripted_insertion_terminal_pose_anchor = load_scripted_terminal_pose_anchor(source_h5, args)
+    action_target_frame = int(getattr(args, "scripted_insertion_action_target_source_frame", -1))
+    args.scripted_insertion_action_target_anchor = (
+        load_scripted_source_pose_anchor(source_h5, action_target_frame)
+        if action_target_frame >= 0
+        else None
+    )
+
+
+def backfill_dp_rollout_actions_for_scripted_history(
+    history: np.ndarray,
+    dp_label: dict[str, Any],
+    *,
+    robot_action_dim: int,
+) -> None:
+    for step in dp_label.get("step_records") or []:
+        if not isinstance(step, dict):
+            continue
+        global_i = int(step.get("global_action_index", -1))
+        if global_i < 0 or global_i >= history.shape[0]:
+            continue
+        action_record = step.get("action") or {}
+        executed = action_record.get("executed")
+        if executed is None:
+            continue
+        action = np.asarray(executed, dtype=np.float32).reshape(-1)
+        if action.shape[0] < int(robot_action_dim):
+            continue
+        history[global_i, : int(robot_action_dim)] = action[: int(robot_action_dim)]
+        rel = step.get("peg_head_at_hole")
+        if rel is not None:
+            history[global_i, 16:19] = np.asarray(rel, dtype=np.float32).reshape(-1)[:3]
+        if "grasped" in step:
+            history[global_i, 22] = float(bool(step.get("grasped")))
+        if "inserted" in step:
+            history[global_i, 23] = float(bool(step.get("inserted")))
+
+
 def replay_bank_candidate(
     *,
     env: Any,
@@ -1004,7 +1151,7 @@ def replay_bank_candidate(
     if int(args.dp_rollout_continuability_horizon) > 0:
         if dp_agent is None or dp_args is None:
             raise RuntimeError("DP rollout label requested without a loaded DP agent")
-        out["dp_rollout_continuability"] = run_dp_rollout_continuability_label(
+        dp_label = run_dp_rollout_continuability_label(
             env=env,
             base_env=base_env,
             stack=stack,
@@ -1018,6 +1165,55 @@ def replay_bank_candidate(
             high=high,
             args=args,
         )
+        out["dp_rollout_continuability"] = dp_label
+        if (
+            bool(getattr(args, "scripted_insertion_after_dp_rollout", False))
+            and str(getattr(args, "scripted_insertion_mode", "disabled")) != "disabled"
+            and not bool(dp_label.get("success", False))
+        ):
+            scripted_prefix_frame = min(
+                int(after_prefix_frame) + int(dp_label.get("executed_steps", 0)),
+                int(args.max_episode_steps),
+            )
+            scripted_live = live_pose_row(base_env, stack, None)
+            scripted_previous_hole_xyz = np.asarray(scripted_live["hole_xyz"], dtype=np.float32).copy()
+            scripted_history = history.copy()
+            backfill_dp_rollout_actions_for_scripted_history(
+                scripted_history,
+                dp_label,
+                robot_action_dim=int(args.robot_action_dim),
+            )
+            scripted_args = SimpleNamespace(**vars(args))
+            scripted_args.expected_action_dim = int(history.shape[1])
+            scripted_args.expected_action_steps = int(args.max_episode_steps)
+            scripted_args.render_live_video = bool(getattr(args, "render_live_video", False))
+            scripted_args.full_episode_rollout = bool(getattr(args, "full_episode_rollout", False))
+            scripted_observed_frames: list[Any] = []
+            (
+                scripted_after_prefix_frame,
+                _scripted_previous_hole_xyz,
+                _scripted_last_live,
+                scripted_record,
+            ) = execute_scripted_insertion_primitive(
+                env=env,
+                base_env=base_env,
+                stack=stack,
+                env_states=env_states,
+                args=scripted_args,
+                low=low,
+                high=high,
+                history=scripted_history,
+                dp_obs_history=dp_obs_history,
+                observed_frames=scripted_observed_frames,
+                previous_hole_xyz=scripted_previous_hole_xyz,
+                prefix_frame=scripted_prefix_frame,
+            )
+            out["scripted_after_dp_rollout"] = scripted_record
+            out["scripted_after_dp_rollout_prefix_frame_before"] = int(scripted_prefix_frame)
+            out["scripted_after_dp_rollout_prefix_frame_after"] = int(scripted_after_prefix_frame)
+            out["scripted_after_dp_rollout_success"] = bool(
+                (scripted_record.get("after_scripted_insertion_eval") or {}).get("success", False)
+            )
     return out
 
 
@@ -1072,28 +1268,49 @@ def main() -> int:
             source_cache[source_key] = load_env_states(source_h5, stack["trajectory_utils"])
         env_states = source_cache[source_key]
         threshold_args = thresholds_from_summary(args, sample_summary)
+        attach_scripted_anchors(threshold_args, source_h5)
         reset_seed = _parse_seed_from_text(" ".join([source_h5.name, str(sample_summary.get("sample_name", ""))]))
-        iter_dirs = iter_dirs_for_summary(summary_path, int(args.max_iter_dirs))
+        include_snapshot_only = bool(
+            (source_suffix_bank is not None and int(args.source_suffix_k) > 0)
+            or suffix_generator is not None
+            or causal_suffix_diffusion is not None
+        )
+        iter_dirs = iter_dirs_for_summary(
+            summary_path,
+            int(args.max_iter_dirs),
+            include_snapshot_only=include_snapshot_only,
+        )
         for iter_dir in iter_dirs:
             bank_path = iter_dir / "candidate_action_bank.npz"
             snapshot_path = iter_dir / "live_state_before_controller.h5"
             history_path = iter_dir / "live_history_raw_action_state.json"
             try:
-                bank_npz = np.load(str(bank_path), allow_pickle=False)
-                bank = {key: bank_npz[key] for key in bank_npz.files}
-                names = [str(item) for item in np.asarray(bank["candidate_names"]).tolist()]
-                actions = np.asarray(bank["candidate_full_actions"], dtype=np.float32)
-                execute_steps = np.asarray(bank["candidate_execute_steps"], dtype=np.int32)
-                selected_mask = np.asarray(bank.get("candidate_selected_mask", np.zeros(len(names), dtype=bool)), dtype=bool)
-                prefix_frame = int(np.asarray(bank.get("prefix_frame_index", [-1])).reshape(-1)[0])
-                iteration = int(np.asarray(bank.get("iteration", [-1])).reshape(-1)[0])
+                bank: dict[str, np.ndarray] = {}
+                names: list[str] = []
+                actions = np.zeros((0, 0, int(args.robot_action_dim)), dtype=np.float32)
+                execute_steps = np.zeros((0,), dtype=np.int32)
+                selected_mask = np.zeros((0,), dtype=bool)
+                bank_exists = bank_path.exists()
+                if bank_exists:
+                    bank_npz = np.load(str(bank_path), allow_pickle=False)
+                    bank = {key: bank_npz[key] for key in bank_npz.files}
+                    names = [str(item) for item in np.asarray(bank["candidate_names"]).tolist()]
+                    actions = np.asarray(bank["candidate_full_actions"], dtype=np.float32)
+                    execute_steps = np.asarray(bank["candidate_execute_steps"], dtype=np.int32)
+                    selected_mask = np.asarray(
+                        bank.get("candidate_selected_mask", np.zeros(len(names), dtype=bool)), dtype=bool
+                    )
+                    prefix_frame = int(np.asarray(bank.get("prefix_frame_index", [-1])).reshape(-1)[0])
+                    iteration = int(np.asarray(bank.get("iteration", [-1])).reshape(-1)[0])
+                else:
+                    iteration, prefix_frame = iter_prefix_from_dir(iter_dir)
                 if iteration_filter and int(iteration) not in iteration_filter:
                     continue
                 if prefix_frame < 0:
-                    raise ValueError("candidate bank missing prefix_frame_index")
+                    raise ValueError("candidate bank or iter dir missing prefix_frame_index")
                 snapshot_state, snapshot_attrs = load_snapshot_state(snapshot_path)
                 history = load_history(history_path)
-                candidate_indices = select_candidate_indices(bank, args)
+                candidate_indices = select_candidate_indices(bank, args) if bank_exists else []
                 if not candidate_indices:
                     has_synthetic = bool(
                         (source_suffix_bank is not None and int(args.source_suffix_k) > 0)
@@ -1119,12 +1336,15 @@ def main() -> int:
                     base_env.set_state_dict(snapshot_state)
                     query_live = live_pose_row(base_env, stack, None)
                     query_rel = np.asarray(query_live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
-                    dp_prior_actions = np.asarray(bank["dp_prior_actions"], dtype=np.float32)[:, : int(args.robot_action_dim)]
                     source_items = source_suffix_candidates(
                         source_bank=source_suffix_bank,
                         scenario=str(sample_summary.get("scenario", "")),
                         query_rel=query_rel,
-                        dp_prior_actions=dp_prior_actions,
+                        dp_prior_actions=(
+                            np.asarray(bank["dp_prior_actions"], dtype=np.float32)[:, : int(args.robot_action_dim)]
+                            if bank_exists and "dp_prior_actions" in bank
+                            else None
+                        ),
                         args=args,
                     )
                     synthetic_base = len(names)
@@ -1300,6 +1520,9 @@ def main() -> int:
     dp_rollout_rows = [
         row for row in valid if isinstance(row.get("dp_rollout_continuability"), dict)
     ]
+    scripted_after_dp_rows = [
+        row for row in valid if isinstance(row.get("scripted_after_dp_rollout"), dict)
+    ]
     summary = {
         "schema": "cosmos3_live_snapshot_action_bank_outcome_summary_v1",
         "panel_root": str(panel_root),
@@ -1373,6 +1596,17 @@ def main() -> int:
                 for row in dp_rollout_rows
                 if (row.get("dp_rollout_continuability") or {}).get("final_contact_stable")
             )
+        ),
+        "scripted_after_dp_label_count": int(len(scripted_after_dp_rows)),
+        "scripted_after_dp_executed_count": int(
+            sum(
+                1
+                for row in scripted_after_dp_rows
+                if (row.get("scripted_after_dp_rollout") or {}).get("scripted_insertion_executed")
+            )
+        ),
+        "scripted_after_dp_success_count": int(
+            sum(1 for row in scripted_after_dp_rows if row.get("scripted_after_dp_rollout_success"))
         ),
         "worsened_abs_yz_sum_count": int(sum(1 for row in valid if float(row.get("delta_abs_yz_sum", 0.0)) > 0.0)),
         "improved_abs_yz_sum_count": int(sum(1 for row in valid if float(row.get("delta_abs_yz_sum", 0.0)) < 0.0)),

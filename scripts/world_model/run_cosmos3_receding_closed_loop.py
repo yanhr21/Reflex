@@ -648,14 +648,18 @@ def _import_live_control_stack(root: Path) -> dict[str, Any]:
 def _make_live_env(stack: dict[str, Any], dp_manifest: Path, args: argparse.Namespace) -> Any:
     manifest = read_json(dp_manifest)
     dp_args = manifest.get("args") or {}
+    render_needed = bool(getattr(args, "render_live_video", True)) or bool(
+        getattr(args, "run_cosmos_inference", False)
+    )
     env_kwargs = dict(
         control_mode=dp_args.get("control_mode", "pd_ee_delta_pose"),
         reward_mode="sparse",
         obs_mode="state",
-        render_mode="rgb_array",
-        human_render_camera_configs=dict(shader_pack="default"),
+        render_mode="rgb_array" if render_needed else None,
         max_episode_steps=args.max_episode_steps,
     )
+    if render_needed:
+        env_kwargs["human_render_camera_configs"] = dict(shader_pack="default")
     return stack["make_eval_envs"](
         dp_args.get("env_id", "PegInsertionSide-v1"),
         1,

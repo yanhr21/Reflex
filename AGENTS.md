@@ -1,181 +1,213 @@
 # Agent Rules
 
-These rules apply to all future agent work in this repository. If older notes,
-legacy plans, or experiment artifacts conflict with this file, this file wins.
+These rules apply to all future work in this repository. If older notes,
+archived plans, or experiment artifacts conflict with this file, this file
+wins.
 
 ## Priority 0: Node And Resource Rules
-
-### Login Node
 
 - Never run Python project tasks on the login node.
 - Never run data generation, rendering, rollout, replay, training, evaluation,
   preflight, imports, syntax checks, smoke tests, or project-code debugging on
   the login node.
 - Login-node work is limited to downloads, `git clone`, `s-get`, read-only
-  text/status inspection, documentation edits, and git bookkeeping requested
-  by the user.
-
-### Compute Node
-
+  text/status inspection, documentation edits, file moves, and git bookkeeping
+  requested by the user.
 - All experiment compute must run inside a tmux-held interactive Slurm
   allocation.
 - Do not use one-shot `sbatch` for experiments unless the user explicitly
   overrides this rule.
-- If a running command must be replaced, interrupt the foreground process
-  inside the tmux allocation and reuse the held allocation.
+- If a running experiment command must be replaced, interrupt the foreground
+  process inside the tmux allocation and reuse the held allocation.
 - Do not release a held allocation merely because the foreground command
   changes.
-
-### Resource Acquisition
-
 - Real training evidence must run for at least `1 GPU x 1 hour` on real data.
-  Longer is allowed; shorter is only a diagnostic or smoke check.
-- If resources are unavailable, reduce requested CPU cores, memory, walltime,
-  or GPU count when scientifically acceptable so a valid allocation starts
-  sooner.
+  Shorter runs are smoke checks or diagnostics only.
+- If resources are unavailable, reduce CPU cores, memory, walltime, or GPU
+  count when scientifically acceptable so a valid allocation starts sooner.
 - After resources are acquired, keep GPU utilization above the cluster release
   threshold; target more than `30%` utilization during active work.
 - Do not leave held GPU resources idle. If blocked, either run aligned work in
   the allocation, reuse it for the next valid step, or report the blocker.
 
-## Priority 1: Active Research Objective
+## Priority 1: Active Route
 
-The active objective is static-policy-to-dynamic-scene transfer through
-world-model task rebinding:
+The active route is ManiSkill `PegInsertionSide-v1`.
 
-> A policy trained on static manipulation tasks should finish the original task
-> in dynamic test scenes by using streaming perception, world-model future
-> scene/task imagination, task-frame rebinding, and conservative closed-loop
-> execution.
+Active experiment assets:
 
-The goal is task completion in the changed world, not restoration of an old
-scene layout.
+- Approved 733 ManiSkill data:
+  `experiments/maniskill/data/fix3_733/`
+- Original trained DP checkpoint:
+  `experiments/maniskill/dp_checkpoint/run_90201/checkpoints/`
+- RGB Cosmos-3 checkpoint:
+  `experiments/maniskill/cosmos3_checkpoint/vision_sft_droid_policy_full1000_rgb_300step_wam/`
 
-## Priority 2: OpenPI Full-Episode Protocol
+Do not use or revive archived experiment routes unless the user explicitly
+asks. Old failed runs, superseded non-active routes, geometric final-seat
+smokes, source-state restore, saved-state replay, scorer diagnostics, and
+stale executor variants are archive context only.
 
-- The active action policy is official OpenPI/pi0.5.
-- OpenPI must replace Diffusion Policy from episode step `0`.
-- Static evaluation is full-episode OpenPI-only insertion.
-- Dynamic evaluation also starts with OpenPI at step `0`.
-- Diffusion Policy must not execute the first stage or finish the main method
-  rollout. DP is legacy baseline/diagnostic context only.
-- Saved-snapshot takeover, DP-prefix/OpenPI-suffix replay, object17 takeover,
-  near-contact takeover, contact-suffix replay, and scorer-only selection are
-  legacy diagnostics only. Do not present them as method success.
-- Prefix rollout is valid only when the prefix is the real observed history
-  available at that time in the same live episode. Different-frame prefixes
-  are allowed for world-model diagnostics and receding-loop tests, not as
-  deployed full-episode OpenPI success.
+## Priority 2: Required Experiment Order
 
-## Priority 3: Cosmos / World-Model Role
+Run experiments in this order:
 
-- The world model is not the robot action policy.
-- Cosmos/world model provides future scene, task-state, or future X-chat/task
-  conditioning for OpenPI after observed dynamic change.
-- OpenPI remains the only robot action policy before and after world-model
-  activation.
-- A causal target-motion detector or continuability gate must decide when
-  world-model conditioning is needed.
-- If no target/hole motion is observed and OpenPI remains task-continuable,
-  keep world-model conditioning inactive or pass through the normal prompt.
-- After observed target/hole motion or uncertainty, activate the world model
-  causally from current/history observations only.
-- Closed-loop dynamic execution must be receding: observe, predict short
-  horizon, condition OpenPI, execute a short action chunk, re-observe, and
-  repeat.
-- Do not condition controller-facing inference on future ground-truth object
-  poses or labels unavailable at deployment time.
+1. Reproduce whether the DP checkpoint works on static ManiSkill.
+2. Check whether RGB Cosmos-3 can imagine future video and produce an
+   action/task chart.
+3. Combine DP and Cosmos to locate the exact failing step, with visualization.
+4. Test the corrected Oracle boundary.
+5. Test live control without Oracle.
 
-## Priority 4: Data Policy
+Do not jump to Oracle or live control before Phases 01 and 02 are understood.
 
-- Use the 733 accepted ManiSkill PegInsertionSide trajectories as the initial
-  real-data source for OpenPI/pi0.5 adaptation:
-  `experiments/world_model_task_rebinding/cosmos3/fix3_v7_dp_user_override_sft_source_20260612_733`.
-- Preserve the full-episode contract: `301` RGB/state frames when reset frame
-  is included and `300` action steps.
-- The fact that these trajectories were generated by DP does not by itself
-  invalidate them for OpenPI imitation/adaptation. They are valid if audits
-  confirm real successful trajectories, correct action space, aligned
-  observation/action/state records, and visual task success.
-- Do not regenerate data merely because a result is poor or inconvenient.
-  Regenerate or supplement only after concrete audit evidence shows invalid
-  structure, wrong action convention, bad alignment, false success labels, or
-  missing dynamic-event coverage required for the world model.
-- Source actions are `pd_ee_delta_pose`; prefer official `pi05_base` plus a
-  fresh OpenPI/LeRobot normalization pass unless a concrete adapter proves
-  another official OpenPI checkpoint action convention is compatible.
+Phase docs must use short numbered folders only:
 
-## Priority 5: Official-Method Requirement
+- `PLAN/01` ... `PLAN/05`
+- `TODO/01` ... `TODO/05`
 
-- Keep model weights and architecture compatible with official OpenPI code:
-  official configs, transforms, checkpoint loading, and LeRobot/RLDS-style
-  dataset interfaces.
-- Do not hand-write a toy VAE, MLP, Transformer, diffusion policy, expert,
-  or world model and present it as OpenPI, T-Rex, VQ-VAE, Cosmos, or method
-  progress.
-- For serious external methods, use official repositories, released weights,
-  and faithful adapters. If official code/weights are unavailable or
-  incompatible, record a blocker instead of silently substituting a weaker
-  homemade model.
+Do not create date-prefixed phase folders or long nested plan names.
+
+## Priority 3: Oracle Boundary
+
+The corrected Oracle boundary is:
+
+1. start from reset;
+2. execute the initial policy segment with the existing DP checkpoint;
+3. detect target / hole motion causally from live observations;
+4. run RGB Cosmos-3 imagination from live RGB history after target motion is
+   detected;
+5. only after Cosmos output exists, allow an explicitly labeled Oracle
+   final-seat step.
+
+Required Oracle evidence:
+
+- command, allocation, node, checkpoint paths, and output path;
+- target-motion trigger frame;
+- Cosmos RGB input/output paths;
+- before-oracle and after-oracle `peg_head_at_hole`;
+- oracle jump distance;
+- rendered video with the oracle moment annotated.
+
+Oracle is an upper-bound / pipeline diagnostic only. It must be recorded with
+`method_evidence_allowed=false` and must not be reported as deployed method
+success.
+
+## Priority 4: Invalid Success Rule
+
+Do not call state intervention success.
+
+- `set_pose`, source-state restore, saved-state replay, geometric final
+  placement, future labels, or hand-selected suffixes are not physical
+  insertion success.
+- If the peg is far from the hole and then snaps into the hole, describe it as
+  invalid state-intervention smoke.
+- Specifically invalid as active success:
+  `live_geom_seat_alltypes_rgb_success_20260701_server64`,
+  `live_geometric_final_seat_alltypes_smoke_*`, and
+  `oracle_final_seat_demo_f286_20260701_server29_fix`.
+- Current valid physical reset-to-end live insertion success count is `0`
+  unless a new run proves otherwise under the active protocol.
+- Before reporting any insertion success, inspect the manifest, summary,
+  command line, wrapper script, relevant Python code path, action trace, and
+  video. If any controller-facing path uses `set_pose`, `set_state`,
+  `set_state_dict`, source env-state restore, saved-state replay, geometric
+  final placement, future labels, hand-selected suffixes, or manual takeover,
+  the result is not physical success.
+- A valid success report must include before/after task distances, the
+  commanded action trace around insertion, whether there was a discontinuous
+  pose jump, final simulator success state, and annotated video evidence. A
+  metric flipping true after state editing is invalid.
+
+## Priority 4.5: Physics / Git Attribution Rule
+
+Do not blame physics, Git, or external tooling without direct evidence.
+
+- Git is version control. It cannot physically move a peg, alter simulator
+  dynamics at runtime, or make a video show a teleport unless the checked-out
+  code being executed contains that behavior.
+- ManiSkill physics is not considered failed when the code directly calls
+  `set_pose`, `set_state`, `set_state_dict`, source-state restore, saved-state
+  replay, or another simulator-state edit. In that case the cause is
+  implementation / protocol misuse, not physics.
+- The previous snap / suction artifact was caused by explicit simulator-state
+  intervention in a diagnostic final-seat path. It must be recorded as an
+  invalid state-intervention artifact, not as physical insertion, not as Git
+  failure, and not as a ManiSkill physics failure.
+- If a real physics-engine failure is suspected, prove it with a minimal
+  controlled reproduction inside a compute-node allocation, logging the exact
+  code path, state before and after, action vector, contact information, and
+  video. Until that evidence exists, classify discontinuous seating as a
+  state-intervention or evaluation-implementation failure.
+
+## Priority 5: RGB Cosmos-3 Requirement
+
+- Cosmos-3 must use RGB evidence.
+- Do not replace RGB Cosmos-3 imagination with a state-only world model, toy
+  dynamics model, simulator-state shortcut, or hidden future label.
+- The DP checkpoint may be state-based; that is acceptable as the base /
+  finisher controller.
+- Do not spend time reproving DP by itself unless it is needed for the Oracle
+  run or a later live protocol.
+
+## Priority 6: Live Method Standard
+
+After Oracle validation, deployed method claims require:
+
+- reset-to-end live ManiSkill rollout;
+- causal target-motion detection;
+- RGB Cosmos-3 imagination from live RGB history;
+- DP-compatible `pd_ee_delta_pose` actions or another explicitly approved live
+  controller;
+- final success measured from live simulator state;
+- rendered visual review for contact/insertion claims;
+- no `set_pose`, source-state restore, saved-state replay, future labels, or
+  hand-selected suffixes.
+
+## Priority 7: Official-Method Requirement
+
+- Preserve the real DP checkpoint and `PegInsertionSide-v1` /
+  `pd_ee_delta_pose` contract.
+- Preserve the RGB Cosmos-3 checkpoint and official loading path.
+- Do not hand-write a toy VAE, MLP, Transformer, diffusion policy, expert, or
+  world model and present it as method progress.
 - Simplified checks may be used only when explicitly labeled as diagnostics.
 
-## Priority 6: Evidence Standards
+## Priority 8: Repository Hygiene
 
-- Major method claims require live simulator evidence, metrics, manifests,
-  and rendered video/contact-sheet inspection.
-- Metric-only success is not enough for manipulation claims.
-- Every run must record command, allocation, node, data source, checkpoint,
-  frame/action contract, output path, and evidence type.
-- Label every artifact as one of: training, conversion/audit, offline
-  inference diagnostic, static full-episode live rollout, dynamic full-episode
-  live rollout, or legacy takeover diagnostic.
-- Do not report offline inference, arbitrary saved-prefix rollout, snapshot
-  replay, or short smoke tests as deployed method success.
-- A valid dynamic success must start with OpenPI at reset, observe target
-  motion online, activate the world model causally, continue with OpenPI
-  actions, and measure final success from real simulator state.
-
-## Priority 7: Active Plan And TODO
-
-- Current active plan:
-  `PLAN/openpi_full_episode_policy/00_overview.md`
-- Current active TODO:
-  `TODO/openpi_full_episode_policy/00_active.md`
-- All content under `PLAN/legacy/` and `TODO/legacy/` is historical context
-  only unless the user explicitly reactivates a branch.
-- Before major work, read the active plan and TODO. Do not execute legacy
-  Cosmos-only, DP-handoff, saved-snapshot takeover, scorer-only, or
-  contact-suffix plans as the current method.
-
-## Priority 8: Failure And Blocker Handling
-
-- When an experiment fails, inspect logs, manifests, generated files, metrics,
-  and visual artifacts before interpreting the result.
-- Classify failures as data, rendering, scheduling, OpenPI compatibility,
-  world-model, controller interface, physics, or evaluation implementation.
-- Try aligned fixes only when they preserve the active objective.
-- If the same blocker repeats without a concrete new diagnosis, stop and
-  report the blocker, attempts already made, and next options.
-- Do not weaken the objective, tune away evaluation gates, or swap in an
-  easier surrogate to create a passing result.
-
-## Priority 9: Repository Hygiene
-
-- Keep checkpoint/data/cache/media out of git.
-- Commit scripts, manifests, text logs, JSON summaries, plans, TODOs, and
-  evidence notes when they are useful for reproducibility.
-- Keep root `/legacy/` experiment dumps out of active commits. `PLAN/legacy/`
-  and `TODO/legacy/` are tracked archives and are allowed.
+- Do not `git commit` or `git push` unless the user explicitly asks in the
+  current conversation.
+- Keep large checkpoints, generated data, cache directories, rendered media,
+  and archived experiment dumps out of git unless explicitly requested.
 - Do not delete important data or checkpoints without explicit user direction.
-- Move or ignore stale output trees only when doing so prevents future
-  confusion and does not destroy needed evidence.
+- Archive by moving under `/public/home/yanhongru/ICLR2027/archive/Reflex/`
+  and preserving the original repository-relative structure. Do not create or
+  use `/public/home/yanhongru/ICLR2027/Reflex/archive/`.
+- Keep active Plan/TODO roots clean: `PLAN/00_overview.md` and
+  `TODO/00_active.md`.
+- Keep `experiments/` visually clean. Active assets live under
+  `experiments/maniskill/`; new outputs go under
+  `experiments/maniskill/runs/<phase>/`.
+- Put all new run logs under `logs/<phase>/`.
+- If an experiment is proven useless, wrong, invalid, or misleading, move it
+  under `/public/home/yanhongru/ICLR2027/archive/Reflex/` after
+  classification instead of leaving it in `experiments/`.
 
-## Priority 10: Explanation Standard
+## Priority 9: Script And Artifact Guard
 
-- Write plans, TODOs, manifests, and evidence notes so a non-expert can follow
-  the causal chain: what changed, what the robot observed, what the world model
-  predicted, what OpenPI executed, and why the final state proves success or
-  failure.
-- Prefer concrete frame counts, action counts, job IDs, artifact paths,
-  checkpoint names, metrics, and visual evidence over vague labels.
-- Record what each result does and does not prove.
+- Before running any existing wrapper or experiment script, inspect it for old
+  routes and state-intervention paths. If it references
+  `experiments/world_model_task_rebinding`, `experiments/dp_peg1000`,
+  OpenPI / LIBERO / robosuite / truepeg paths, `set_pose`, `set_state`,
+  `set_state_dict`, source-state restore, saved-state replay, future labels,
+  geometric final-seat, scorer-only replay, or hand-selected suffixes, do not
+  run it as an active method script until it is patched or archived.
+- Stale scripts may remain as archive context only. They are not executable
+  active protocol unless their paths, evidence rules, and state-intervention
+  behavior have been reviewed and updated.
+- New active scripts must write outputs only under
+  `experiments/maniskill/runs/<phase>/<short_run_id>/` and logs only under
+  `logs/<phase>/`.
+- Every new run must write a manifest recording command, allocation, node,
+  data source, checkpoint, controller/action contract, output path, evidence
+  type, and whether `method_evidence_allowed` is true or false.

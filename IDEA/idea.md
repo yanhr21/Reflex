@@ -1,140 +1,105 @@
-# Current Idea: OpenPI-First World-Model Task Rebinding
+# Current Idea: ManiSkill Five-Phase Route
 
-Date: 2026-06-26
+Date: 2026-07-02
 
-## Latest Correction
+## Global Direction
 
-The active method is not an OpenPI takeover from a DP/Cosmos failure snapshot.
-That protocol is legacy diagnostic only.
+Use ManiSkill `PegInsertionSide-v1` as the only active route.
 
-The correct method is:
+Active assets:
 
-1. Static scene: OpenPI/pi0.5 replaces Diffusion Policy from the first action
-   through the end of the episode.
-2. Dynamic scene: OpenPI/pi0.5 also starts from the first action. After the
-   target/object scene changes, a world model predicts future scene/task state
-   or future `x_t`, and OpenPI uses that causal prediction/conditioning to
-   finish the task.
-3. Diffusion Policy is only a historical baseline, teacher/data source, or
-   comparison. It must not execute the first part of the method rollout, and a
-   DP handoff result is not OpenPI method success.
+- 733 approved data: `experiments/maniskill/data/fix3_733/`
+- DP checkpoint: `experiments/maniskill/dp_checkpoint/run_90201/checkpoints/`
+- RGB Cosmos-3 checkpoint:
+  `experiments/maniskill/cosmos3_checkpoint/vision_sft_droid_policy_full1000_rgb_300step_wam/`
 
-Therefore, saved dynamic takeover snapshot experiments are not valid main
-method evidence. They may remain archived as diagnostics showing that previous
-OpenPI chunks preserved grasp but did not directly insert.
+## Required Order
 
-## One Sentence
+1. Reproduce whether the DP checkpoint works on static ManiSkill.
+2. Check whether RGB Cosmos-3 can imagine future video and produce an
+   action/task chart.
+3. Convert Cosmos output into controller-facing signals and combine them with
+   DP-compatible execution.
+4. Test the corrected Oracle boundary.
+5. Test live control without Oracle.
 
-Train and evaluate an official OpenPI/pi0.5 policy as the full manipulation
-policy, then add a causal world-model conditioning path for dynamic scenes so
-OpenPI can complete peg insertion after the target moves.
+## Controller-Facing World Model Direction
 
-## Research Objective
-
-The objective is task completion in the changed world. The system should not
-restore an old scene layout, switch to hand-coded recovery, or hand execution
-back to Diffusion Policy as the main method.
-
-The desired final pipeline is:
+The research review in
+`docs/controller_facing_world_model_research_20260702.md` is now part of the
+active idea. The key conclusion is:
 
 ```text
-current RGB / state / object-task slots
-  -> OpenPI executes from episode start
-  -> target/object motion is observed causally
-  -> world model predicts future scene/task state or future x_t
-  -> OpenPI conditions on current observation plus WM output
-  -> OpenPI completes insertion
-  -> final simulator state and video/contact evidence verify success
+RGB future / latent future
+  -> task-state extraction
+  -> candidate action or local primitive proposal
+  -> world-model / geometry / executability scoring
+  -> trust gate
+  -> DP-compatible live execution
 ```
 
-## Static Baseline
+Do not optimize only for better-looking Cosmos videos. Cosmos-3 must become a
+source of explicit controller-facing variables:
 
-The first required baseline is OpenPI-only static full-episode insertion:
+- target / hole displacement;
+- task-frame and insertion-axis estimate;
+- peg-head / hole-center / peg-axis / hole-axis chart;
+- lateral, axial, and angular error;
+- near-hole, preinsert, contact, and continuability gates;
+- prediction-observation trust score;
+- executable-action score.
 
-- initialize the original static PegInsertionSide scene;
-- run OpenPI from step `0` through the full horizon;
-- use no DP execution and no takeover snapshot;
-- record final success, inserted/contact-stable predicates, grasp, action
-  traces, and video/contact sheets.
+The active bridge should follow the lowest-risk literature pattern for our
+assets: GPC-style frozen-policy candidate ranking plus Feedback-WM-style online
+prediction-observation correction. That means:
 
-If this baseline fails, the blocker is OpenPI/ManiSkill action-space,
-normalization, observation, or imitation alignment. Dynamic world-model work
-should not be interpreted until this baseline is understood.
+1. the frozen DP and bounded primitives propose real `pd_ee_delta_pose`
+   candidate chunks;
+2. Cosmos RGB futures plus geometric extraction score task progress and
+   executability;
+3. the controller executes only short chunks;
+4. the system reobserves, updates the trust gate, and replans.
 
-## Dynamic Method
+Recommended active modules:
 
-The dynamic method must also start with OpenPI at step `0`.
+1. RGB task-state extractor: converts live/Cosmos RGB into peg/hole/task-frame
+   variables and saves overlays.
+2. Candidate generator: DP continuation, small task-frame residuals, bounded
+   insertion-axis push, retreat-reapproach, and hold/reobserve.
+3. Scorer: ranks candidates by predicted progress, lateral/angular error,
+   executability, trust, and discontinuity penalties.
+4. Trust gate: decides whether to trust Cosmos, chunk length, handoff mode, and
+   whether the result can be method evidence.
+5. Physical finisher: executes only logged DP-compatible actions, with gripper
+   closed by default and no state intervention.
 
-When the object/target changes:
+Full WAM retraining, toy world models, or action-free video-only success claims
+are not the next step.
 
-- perception or simulator-derived diagnostics provide only causal current and
-  history information;
-- the world model predicts future scene/task state or future `x_t`;
-- OpenPI receives the current observation plus the allowed WM conditioning;
-- OpenPI executes the action chunks;
-- the loop reobserves and replans without using future ground-truth states.
+## Non-Negotiable Lesson
 
-DP may be reported as a baseline, but not as the first-stage executor or
-handoff finisher for the main result.
+A video where the peg is far from the hole and then snaps into the hole is not
+success. `set_pose`, source-state restore, saved-state replay, geometric final
+placement, and future labels are state interventions. They are diagnostics only
+and must be labeled that way.
 
-## What The Old Ideas Contribute
+The new literature reinforces the same point under the name "executability
+gap": visually plausible futures can still imply impossible robot actions. Any
+Cosmos future must be checked against feasible `pd_ee_delta_pose` action
+magnitudes, successful DP insertion action statistics, and discontinuity
+checks before it is allowed to influence a live controller.
 
-The original world-model task-rebinding idea remains useful at a high level:
-dynamic task completion should be solved by observing objects, predicting
-future task frames, and rebinding action to the changed scene.
+## Workspace Rule
 
-The contact-action reset contributed an important negative diagnosis:
-scorer-only selection and weak local action generators cannot create the
-missing insertion/contact behavior. The action model itself must be strong and
-must produce real insertion actions.
+Keep `experiments/` clean. Use:
 
-The OpenPI/pi0.5 pivot contributed reusable infrastructure:
+- active assets: `experiments/maniskill/`
+- new outputs: `experiments/maniskill/runs/<phase>/`
+- logs: `logs/<phase>/`
+- useless or invalid experiments:
+  `/public/home/yanhongru/ICLR2027/archive/Reflex/`
 
-- official OpenPI/pi0.5 configs and checkpoint loading;
-- accepted 733 ManiSkill trajectories converted to LeRobot-style data;
-- OpenPI norm-stat, training, checkpoint-preservation, and inference tooling;
-- object/task-frame conditioning diagnostics such as object17;
-- evidence that previous takeover-style OpenPI chunks preserved grasp but did
-  not directly insert.
-
-Those contributions are infrastructure and diagnostics. They do not prove the
-correct full-episode OpenPI method.
-
-## Current Evidence Boundary
-
-As of this cleanup, there is no accepted evidence that OpenPI completes either:
-
-- static full-episode insertion from step `0`; or
-- dynamic full-episode insertion with world-model conditioning.
-
-The existing OpenPI saved-snapshot replay results are protocol-misaligned for
-the main method because they start from DP/Cosmos-derived takeover states and
-often evaluate DP96 continuation. They must be treated as legacy diagnostics.
-
-## Data Boundary
-
-The accepted 733 trajectories are still valuable. They contain successful
-insertion behavior and can be used for OpenPI adaptation, normalization,
-diagnostics, or teacher data.
-
-If new data are generated, it should be because the corrected OpenPI-from-start
-protocol exposes a concrete coverage gap, not because the old takeover replay
-failed. New ManiSkill generation should target the missing behavior explicitly:
-OpenPI-compatible full-episode static demonstrations, dynamic episodes from
-step `0`, and contact-positive segments that remain consistent with the
-official OpenPI action space.
-
-## Required Success Evidence
-
-A result can be treated as main method evidence only if it has:
-
-- OpenPI executing from episode start;
-- no DP handoff in the main rollout;
-- causal observations and WM conditioning only;
-- full horizon accounting;
-- final simulator success state;
-- inserted/contact-stable/grasp metrics;
-- inspected video/contact artifacts.
-
-Training loss, saved-snapshot takeover replay, DP96 continuability, or
-privileged future-state conditioning are diagnostics only.
+Before a result is treated as success, rule out state intervention by checking
+the wrapper, manifest, summary, relevant Python path, action trace, and video.
+Git is not a physical cause, and ManiSkill physics is not blamed when the code
+path directly overwrites simulator state.

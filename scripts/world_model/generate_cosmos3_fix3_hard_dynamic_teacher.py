@@ -127,6 +127,14 @@ class Args:
     preinsert_refine_steps: int = 5
     final_insert_refine_steps: int = 4
     final_insert_settle_steps: int = 0
+    static_insert_controller: str = "refined_goal_pose"
+    static_tcp_servo_step_m: float = 0.005
+    static_tcp_servo_max_steps: int = 80
+    static_tcp_servo_feedback_gain: float = 1.0
+    static_tcp_servo_max_yz_correction_m: float = 0.006
+    static_tcp_servo_wall_yz_abort_m: float = 0.012
+    static_tcp_servo_close_steps: int = 2
+    static_tcp_servo_final_settle_passes: int = 4
     constrained_insert_projection: bool = False
     max_constrained_insert_raw_line_yz_m: float = 0.025
     trigger_peg_lift_min_m: float = 0.012
@@ -375,6 +383,12 @@ def _live_peg_line_gate_info(base_env, args: Args) -> dict[str, Any]:
     return _peg_line_gate_info(points, peg_half_length, peg_radius, hole_radius, args)
 
 
+def _line_center_x_yz(line_info: dict[str, Any]) -> tuple[float, np.ndarray]:
+    points = np.asarray(line_info["peg_line_points_hole"], dtype=np.float32)
+    center = points.mean(axis=0)
+    return float(center[0]), center[1:3].astype(np.float32)
+
+
 def _live_wall_collision_risk(base_env, args: Args) -> tuple[bool, dict[str, Any]]:
     info = _live_peg_line_gate_info(base_env, args)
     return bool(info["wall_collision_risk"]), info
@@ -553,6 +567,205 @@ def _move_to_refined_final_insert(
         "sweep_centerline_yz_limit_min_m": float(sweep_limit_min),
         "raw_wall_collision_risk_any": bool(raw_wall_collision_risk_any),
         "final_line_gate": final_line_info,
+    }
+
+
+def _move_to_static_tcp_servo_final_insert(
+    *,
+    base_env,
+    planner: PandaArmMotionPlanningSolver,
+    env: RecordEpisode,
+    episode_start_step: int,
+    args: Args,
+) -> tuple[bool, dict[str, Any]]:
+    """Advance the live TCP by small hole-frame deltas for static teacher data.
+
+    This is a candidate-teacher controller, not a method policy. It changes the
+    physical insertion construction after retry1 showed that the absolute
+    refined-goal insertion path can hit centerline and wall-risk gates even
+    when the simulator briefly reports live success.
+    """
+
+    start_line = _live_peg_line_gate_info(base_env, args)
+    start_x, _ = _line_center_x_yz(start_line)
+    final_x = float(args.final_insert_offset_m)
+    max_raw_steps = int(args.max_raw_action_steps)
+    goal_mat = base_env.goal_pose.to_transformation_matrix()[0, :3, :3].cpu().numpy().astype(np.float32)
+    goal_x = goal_mat[:, 0]
+    goal_y = goal_mat[:, 1]
+    goal_z = goal_mat[:, 2]
+
+    def raw_steps_now() -> int:
+        return int(env._elapsed_record_steps) - int(episode_start_step)
+
+    def budget_failure(reason: str, step_idx: int | None, records: list[dict[str, Any]]) -> dict[str, Any] | None:
+        raw_steps = raw_steps_now()
+        if raw_steps <= max_raw_steps:
+            return None
+        return {
+            "controller": "static_tcp_incremental_servo",
+            "reason": reason,
+            "raw_steps": int(raw_steps),
+            "max_raw_action_steps": int(max_raw_steps),
+            "insert_step_idx": None if step_idx is None else int(step_idx),
+            "records": records,
+        }
+
+    if final_x <= start_x:
+        strict_ok, head, radius, final_line = _strict_live_inserted(base_env, args)
+        return strict_ok, {
+            "controller": "static_tcp_incremental_servo",
+            "reason": "already_at_or_past_final_x" if not strict_ok else "already_strict_inserted",
+            "start_center_x_m": float(start_x),
+            "final_insert_offset_m": float(final_x),
+            "live_success": bool(_live_success(base_env)),
+            "peg_head_at_hole": head.astype(float).tolist(),
+            "hole_radius": float(radius),
+            "start_line_gate": start_line,
+            "final_line_gate": final_line,
+        }
+
+    step_m = max(float(args.static_tcp_servo_step_m), 1e-4)
+    natural_steps = int(np.ceil((final_x - start_x) / step_m))
+    num_steps = max(1, min(int(args.static_tcp_servo_max_steps), natural_steps))
+    records: list[dict[str, Any]] = []
+
+    def run_incremental_pose(step_idx: int, phase: str) -> tuple[bool, dict[str, Any] | None]:
+        line_before = _live_peg_line_gate_info(base_env, args)
+        line_x, line_center_yz = _line_center_x_yz(line_before)
+        remaining_x = max(0.0, final_x - line_x)
+        dx = min(step_m, remaining_x)
+        yz_correction = -float(args.static_tcp_servo_feedback_gain) * line_center_yz
+        yz_norm = float(np.linalg.norm(yz_correction))
+        max_corr = max(float(args.static_tcp_servo_max_yz_correction_m), 1e-6)
+        if yz_norm > max_corr:
+            yz_correction = yz_correction * (max_corr / yz_norm)
+
+        if int(args.static_tcp_servo_close_steps) > 0:
+            planner.close_gripper(t=int(args.static_tcp_servo_close_steps))
+            budget = budget_failure("static_tcp_servo_raw_steps_exceed_limit_after_close", step_idx, records)
+            if budget is not None:
+                return False, budget
+
+        tcp_p, tcp_q = _to_np_pose(base_env.agent.tcp.pose)
+        correction_world = (
+            float(dx) * goal_x
+            + float(yz_correction[0]) * goal_y
+            + float(yz_correction[1]) * goal_z
+        )
+        target_tcp_pose = sapien.Pose(tcp_p + correction_world.astype(np.float32), tcp_q)
+        try:
+            result = planner.move_to_pose_with_screw(
+                target_tcp_pose,
+                refine_steps=max(0, int(args.final_insert_settle_steps)),
+            )
+        except RuntimeError as exc:
+            return False, {
+                "controller": "static_tcp_incremental_servo",
+                "reason": "static_tcp_servo_planner_exception",
+                "error": str(exc),
+                "insert_step_idx": int(step_idx),
+                "records": records,
+            }
+
+        budget = budget_failure("static_tcp_servo_raw_steps_exceed_limit_after_move", step_idx, records)
+        if budget is not None:
+            return False, budget
+        if int(args.static_tcp_servo_close_steps) > 0:
+            planner.close_gripper(t=int(args.static_tcp_servo_close_steps))
+            budget = budget_failure("static_tcp_servo_raw_steps_exceed_limit_after_post_move_close", step_idx, records)
+            if budget is not None:
+                return False, budget
+
+        line_after = _live_peg_line_gate_info(base_env, args)
+        head_after = _live_peg_head_at_hole(base_env)
+        record = {
+            "phase": str(phase),
+            "insert_step_idx": int(step_idx),
+            "insert_num_steps": int(num_steps),
+            "line_center_x_before_m": float(line_x),
+            "remaining_insert_x_m": float(remaining_x),
+            "dx_m": float(dx),
+            "yz_correction_m": yz_correction.astype(float).tolist(),
+            "raw_steps_after_step": int(raw_steps_now()),
+            "planner_result": _jsonable(result),
+            "peg_head_at_hole": head_after.astype(float).tolist(),
+            "line_gate_before": line_before,
+            "line_gate_after": line_after,
+        }
+        records.append(record)
+        if result == -1:
+            return False, {
+                "controller": "static_tcp_incremental_servo",
+                "reason": "static_tcp_servo_planner_step_failed",
+                "insert_step_idx": int(step_idx),
+                "records": records,
+            }
+        if bool(line_after["wall_collision_risk"]) and (
+            float(line_after["centerline_yz_max_m"]) > float(args.static_tcp_servo_wall_yz_abort_m)
+        ):
+            return False, {
+                "controller": "static_tcp_incremental_servo",
+                "reason": "static_tcp_servo_wall_collision_risk",
+                "insert_step_idx": int(step_idx),
+                "records": records,
+            }
+        return True, None
+
+    for step_idx in range(num_steps):
+        line_now = _live_peg_line_gate_info(base_env, args)
+        line_x, _ = _line_center_x_yz(line_now)
+        if line_x >= final_x:
+            break
+        ok, failure = run_incremental_pose(step_idx, "advance")
+        if not ok:
+            return False, failure or {
+                "controller": "static_tcp_incremental_servo",
+                "reason": "static_tcp_servo_unknown_advance_failure",
+                "insert_step_idx": int(step_idx),
+                "records": records,
+            }
+
+    for settle_idx in range(max(0, int(args.static_tcp_servo_final_settle_passes))):
+        ok, failure = run_incremental_pose(num_steps + settle_idx, "final_yz_settle")
+        if not ok:
+            return False, failure or {
+                "controller": "static_tcp_incremental_servo",
+                "reason": "static_tcp_servo_unknown_final_settle_failure",
+                "insert_step_idx": int(num_steps + settle_idx),
+                "records": records,
+            }
+
+    strict_ok, head, radius, final_line = _strict_live_inserted(base_env, args)
+    if not strict_ok:
+        return False, {
+            "controller": "static_tcp_incremental_servo",
+            "reason": "static_tcp_servo_strict_insert_failed",
+            "peg_head_at_hole": head.astype(float).tolist(),
+            "hole_radius": float(radius),
+            "live_success": bool(_live_success(base_env)),
+            "raw_steps_after_insert": int(raw_steps_now()),
+            "max_raw_action_steps": int(max_raw_steps),
+            "records": records,
+            "final_line_gate": final_line,
+        }
+    return True, {
+        "controller": "static_tcp_incremental_servo",
+        "start_center_x_m": float(start_x),
+        "final_insert_offset_m": float(final_x),
+        "static_tcp_servo_step_m": float(args.static_tcp_servo_step_m),
+        "static_tcp_servo_max_steps": int(args.static_tcp_servo_max_steps),
+        "static_tcp_servo_close_steps": int(args.static_tcp_servo_close_steps),
+        "static_tcp_servo_feedback_gain": float(args.static_tcp_servo_feedback_gain),
+        "static_tcp_servo_max_yz_correction_m": float(args.static_tcp_servo_max_yz_correction_m),
+        "static_tcp_servo_wall_yz_abort_m": float(args.static_tcp_servo_wall_yz_abort_m),
+        "static_tcp_servo_final_settle_passes": int(args.static_tcp_servo_final_settle_passes),
+        "raw_steps_after_insert": int(raw_steps_now()),
+        "max_raw_action_steps": int(max_raw_steps),
+        "records": records,
+        "strict_peg_head_at_hole": head.astype(float).tolist(),
+        "strict_final_line_gate": final_line,
+        "hole_radius": float(radius),
     }
 
 
@@ -739,6 +952,8 @@ def _insert_current_goal(
     *,
     base_env,
     planner: PandaArmMotionPlanningSolver,
+    env: RecordEpisode,
+    episode_start_step: int,
     grasp_pose: sapien.Pose,
     peg_pose_at_grasp: sapien.Pose,
     args: Args,
@@ -758,16 +973,27 @@ def _insert_current_goal(
     preinsert_ok, preinsert_info = _preinsert_ready(base_env, args)
     if not preinsert_ok:
         return False, {"reason": "preinsert_gate_failed", **preinsert_info, "insert_offset_m": insert_offset_m}
-    insert_ok, insert_sweep_info = _move_to_refined_final_insert(
-        base_env=base_env,
-        planner=planner,
-        insert_pose=insert_pose,
-        insert_offset_m=insert_offset_m,
-        final_offset_m=float(args.final_insert_offset_m),
-        step_m=float(args.insert_step_m),
-        refine_steps=int(args.final_insert_refine_steps),
-        args=args,
-    )
+    if str(args.static_insert_controller) == "refined_goal_pose":
+        insert_ok, insert_sweep_info = _move_to_refined_final_insert(
+            base_env=base_env,
+            planner=planner,
+            insert_pose=insert_pose,
+            insert_offset_m=insert_offset_m,
+            final_offset_m=float(args.final_insert_offset_m),
+            step_m=float(args.insert_step_m),
+            refine_steps=int(args.final_insert_refine_steps),
+            args=args,
+        )
+    elif str(args.static_insert_controller) == "tcp_incremental_servo":
+        insert_ok, insert_sweep_info = _move_to_static_tcp_servo_final_insert(
+            base_env=base_env,
+            planner=planner,
+            env=env,
+            episode_start_step=episode_start_step,
+            args=args,
+        )
+    else:
+        raise ValueError(f"unknown static_insert_controller: {args.static_insert_controller!r}")
     if not insert_ok:
         return False, {"reason": "planner_final_insert_failed", **insert_sweep_info, "insert_offset_m": insert_offset_m}
     strict_ok, head, radius, final_line_info = _strict_live_inserted(base_env, args)
@@ -812,6 +1038,8 @@ def _run_static_teacher_episode(env: RecordEpisode, rng: np.random.Generator, ar
         insert_ok, insert_info = _insert_current_goal(
             base_env=base_env,
             planner=planner,
+            env=env,
+            episode_start_step=episode_start_step,
             grasp_pose=grasp_pose,
             peg_pose_at_grasp=peg_pose_at_grasp,
             args=args,
@@ -835,7 +1063,10 @@ def _run_static_teacher_episode(env: RecordEpisode, rng: np.random.Generator, ar
             "motion_path_xyz": [initial_box_p.astype(float).tolist(), final_box_p.astype(float).tolist()],
             "final_insert_start_step": int(insert_start),
             "source_kind": str(args.source_kind),
-            "teacher_phases": ["motion_planner_grasp", "motion_planner_static_insert"],
+            "teacher_phases": [
+                "motion_planner_grasp",
+                f"motion_planner_static_insert_{args.static_insert_controller}",
+            ],
             "baseline_dp_expected": "static control sample; not a hard dynamic supplement row",
             "success": True,
             **insert_info,
@@ -902,6 +1133,8 @@ def _run_peg_recovery_teacher_episode(
         insert_ok, insert_info = _insert_current_goal(
             base_env=base_env,
             planner=planner,
+            env=env,
+            episode_start_step=episode_start_step,
             grasp_pose=grasp_pose,
             peg_pose_at_grasp=peg_pose_at_grasp,
             args=args,

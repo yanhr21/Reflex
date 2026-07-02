@@ -19,6 +19,9 @@ logs/
 experiments/_archive*/
 experiments/dp_peg1000/
 experiments/world_model_task_rebinding/cosmos3/
+experiments/world_model_task_rebinding/openpi/*_alloc*/
+experiments/world_model_task_rebinding/openpi/openpi_pi05_*_alloc*/
+experiments/world_model_task_rebinding/openpi/pi05_*_alloc*/
 experiments/**/checkpoints/
 experiments/**/checkpoints_local_preserved/
 experiments/**/checkpoint*/

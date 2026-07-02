@@ -41,6 +41,14 @@ CONTROLLER_ACTION_SOURCE="${CONTROLLER_ACTION_SOURCE:-cosmos_robot_action}"
 EXECUTOR_CHECKPOINT="${EXECUTOR_CHECKPOINT:-}"
 EXECUTOR_RESIDUAL_SCALE="${EXECUTOR_RESIDUAL_SCALE:-1.0}"
 CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS="${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-}"
+CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT="${CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT:-}"
+CAUSAL_SUFFIX_DIFFUSION_OFFSETS="${CAUSAL_SUFFIX_DIFFUSION_OFFSETS:-64,48,32,24,16,8}"
+CAUSAL_SUFFIX_DIFFUSION_SAMPLES_PER_OFFSET="${CAUSAL_SUFFIX_DIFFUSION_SAMPLES_PER_OFFSET:-1}"
+CAUSAL_SUFFIX_DIFFUSION_EXECUTE_STEPS="${CAUSAL_SUFFIX_DIFFUSION_EXECUTE_STEPS:-8}"
+CAUSAL_SUFFIX_DIFFUSION_TEMPERATURE="${CAUSAL_SUFFIX_DIFFUSION_TEMPERATURE:-1.0}"
+CAUSAL_SUFFIX_DIFFUSION_SEED_BASE="${CAUSAL_SUFFIX_DIFFUSION_SEED_BASE:-20260701}"
+CAUSAL_SUFFIX_DIFFUSION_SELECTED_OFFSET="${CAUSAL_SUFFIX_DIFFUSION_SELECTED_OFFSET:--1}"
+CAUSAL_SUFFIX_DIFFUSION_SELECTED_SAMPLE="${CAUSAL_SUFFIX_DIFFUSION_SELECTED_SAMPLE:-0}"
 ALLOW_LIVE_RECEDING_DIAGNOSTIC="${ALLOW_LIVE_RECEDING_DIAGNOSTIC:-false}"
 SAVE_LIVE_STATE_SNAPSHOTS="${SAVE_LIVE_STATE_SNAPSHOTS:-false}"
 SAVE_CANDIDATE_ACTION_BANK="${SAVE_CANDIDATE_ACTION_BANK:-false}"
@@ -58,13 +66,16 @@ main() {
   if [[ "${PRETRIGGER_CONTROL_MODE}" != "frozen_dp_until_target_motion" ]]; then
     diagnostic_reasons+=("pretrigger_control_mode_not_live_frozen_dp:${PRETRIGGER_CONTROL_MODE}")
   fi
-  if [[ "${RUN_COSMOS_INFERENCE}" != "true" ]]; then
+  if [[ "${RUN_COSMOS_INFERENCE}" != "true" && "${CONTROLLER_ACTION_SOURCE}" != "causal_suffix_diffusion" ]]; then
     diagnostic_reasons+=("cosmos_inference_disabled")
   fi
   if [[ "${CONTROLLER_ACTION_SOURCE}" == "residual_executor" || "${CONTROLLER_ACTION_SOURCE}" == "contact_executor" || "${CONTROLLER_ACTION_SOURCE}" == "candidate_executor" ]]; then
     if [[ ! -s "${EXECUTOR_CHECKPOINT}" ]]; then
       diagnostic_reasons+=("missing_${CONTROLLER_ACTION_SOURCE}_checkpoint")
     fi
+  fi
+  if [[ "${CONTROLLER_ACTION_SOURCE}" == "causal_suffix_diffusion" && ! -s "${CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT}" ]]; then
+    diagnostic_reasons+=("missing_causal_suffix_diffusion_checkpoint")
   fi
   if (( ${#diagnostic_reasons[@]} > 0 )) && [[ "${ALLOW_LIVE_RECEDING_DIAGNOSTIC}" != "true" ]]; then
     {
@@ -114,6 +125,14 @@ main() {
     echo "executor_checkpoint=${EXECUTOR_CHECKPOINT:-none}"
     echo "executor_residual_scale=${EXECUTOR_RESIDUAL_SCALE}"
     echo "candidate_executor_short_prefix_steps=${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS:-none}"
+    echo "causal_suffix_diffusion_checkpoint=${CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT:-none}"
+    echo "causal_suffix_diffusion_offsets=${CAUSAL_SUFFIX_DIFFUSION_OFFSETS}"
+    echo "causal_suffix_diffusion_samples_per_offset=${CAUSAL_SUFFIX_DIFFUSION_SAMPLES_PER_OFFSET}"
+    echo "causal_suffix_diffusion_execute_steps=${CAUSAL_SUFFIX_DIFFUSION_EXECUTE_STEPS}"
+    echo "causal_suffix_diffusion_temperature=${CAUSAL_SUFFIX_DIFFUSION_TEMPERATURE}"
+    echo "causal_suffix_diffusion_seed_base=${CAUSAL_SUFFIX_DIFFUSION_SEED_BASE}"
+    echo "causal_suffix_diffusion_selected_offset=${CAUSAL_SUFFIX_DIFFUSION_SELECTED_OFFSET}"
+    echo "causal_suffix_diffusion_selected_sample=${CAUSAL_SUFFIX_DIFFUSION_SELECTED_SAMPLE}"
     echo "save_live_state_snapshots=${SAVE_LIVE_STATE_SNAPSHOTS}"
     echo "save_candidate_action_bank=${SAVE_CANDIDATE_ACTION_BANK}"
     echo "live_progress_interval=${LIVE_PROGRESS_INTERVAL}"
@@ -147,9 +166,19 @@ main() {
     --live-progress-interval "${LIVE_PROGRESS_INTERVAL}"
     --controller-action-source "${CONTROLLER_ACTION_SOURCE}"
     --executor-residual-scale "${EXECUTOR_RESIDUAL_SCALE}"
+    --causal-suffix-diffusion-offsets "${CAUSAL_SUFFIX_DIFFUSION_OFFSETS}"
+    --causal-suffix-diffusion-samples-per-offset "${CAUSAL_SUFFIX_DIFFUSION_SAMPLES_PER_OFFSET}"
+    --causal-suffix-diffusion-execute-steps "${CAUSAL_SUFFIX_DIFFUSION_EXECUTE_STEPS}"
+    --causal-suffix-diffusion-temperature "${CAUSAL_SUFFIX_DIFFUSION_TEMPERATURE}"
+    --causal-suffix-diffusion-seed-base "${CAUSAL_SUFFIX_DIFFUSION_SEED_BASE}"
+    --causal-suffix-diffusion-selected-offset "${CAUSAL_SUFFIX_DIFFUSION_SELECTED_OFFSET}"
+    --causal-suffix-diffusion-selected-sample "${CAUSAL_SUFFIX_DIFFUSION_SELECTED_SAMPLE}"
   )
   if [[ -n "${EXECUTOR_CHECKPOINT}" ]]; then
     args+=(--executor-checkpoint "${EXECUTOR_CHECKPOINT}")
+  fi
+  if [[ -n "${CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT}" ]]; then
+    args+=(--causal-suffix-diffusion-checkpoint "${CAUSAL_SUFFIX_DIFFUSION_CHECKPOINT}")
   fi
   if [[ -n "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}" ]]; then
     args+=(--candidate-executor-short-prefix-steps "${CANDIDATE_EXECUTOR_SHORT_PREFIX_STEPS}")

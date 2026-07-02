@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -161,10 +162,26 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--run-cosmos-inference", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--render-live-video",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Render live RGB frames and write videos. Disable only for state-only "
+            "diagnostics when Vulkan rendering is the blocker; Cosmos inference "
+            "requires rendered prefix video."
+        ),
+    )
     parser.add_argument("--cosmos-wrapper", default="scripts/slurm/run_cosmos3_live_prefix_policy_inference_in_allocation.sh")
     parser.add_argument(
         "--controller-action-source",
-        choices=("cosmos_robot_action", "residual_executor", "contact_executor", "candidate_executor"),
+        choices=(
+            "cosmos_robot_action",
+            "residual_executor",
+            "contact_executor",
+            "candidate_executor",
+            "causal_suffix_diffusion",
+        ),
         default="cosmos_robot_action",
         help=(
             "cosmos_robot_action executes the raw robot-action columns predicted "
@@ -173,7 +190,9 @@ def parse_args() -> argparse.Namespace:
             "contact_executor uses the contact/progress-conditioned action head "
             "with causal live contact context. candidate_executor samples/scales "
             "multiple residual chunks and selects one with an action-conditioned "
-            "progress/contact/value scorer."
+            "progress/contact/value scorer. causal_suffix_diffusion executes a "
+            "short learned insertion-prefix chunk from the current live "
+            "peg-head-at-hole state, then reuses the existing live gate for DP handoff."
         ),
     )
     parser.add_argument(
@@ -232,6 +251,10 @@ def parse_args() -> argparse.Namespace:
             "inserted probability. Defaults to zero, which is disabled."
         ),
     )
+    parser.add_argument("--candidate-outcome-scorer-min-pred-state-x", type=float, default=-1.0e9)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-x", type=float, default=1.0e9)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-abs-y", type=float, default=-1.0)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-abs-z", type=float, default=-1.0)
     parser.add_argument(
         "--candidate-outcome-scorer-score-state-abs-axis-weights",
         default="",
@@ -258,6 +281,17 @@ def parse_args() -> argparse.Namespace:
             "candidate-prefix plus DP prior suffix over the checkpoint horizon, "
             "but only the prefix is executed before reobserving. Empty preserves "
             "the original full-chunk behavior."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-executor-allow-dp-prior-before-gate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Compatibility diagnostic for the archived iter1500 predpath route. "
+            "When enabled, the candidate selector may choose the DP-prior chunk "
+            "before the live C_pi handoff gate passes. This does not mark a DP "
+            "handoff; actual DP handoff still requires the programmed gate."
         ),
     )
     parser.add_argument(
@@ -312,6 +346,27 @@ def parse_args() -> argparse.Namespace:
             "validation calibration and must not be used to hide a failed model."
         ),
     )
+    parser.add_argument("--causal-suffix-diffusion-checkpoint", default="")
+    parser.add_argument("--causal-suffix-diffusion-offsets", default="64,48,32,24,16,8")
+    parser.add_argument("--causal-suffix-diffusion-samples-per-offset", type=int, default=1)
+    parser.add_argument("--causal-suffix-diffusion-execute-steps", type=int, default=8)
+    parser.add_argument("--causal-suffix-diffusion-temperature", type=float, default=1.0)
+    parser.add_argument("--causal-suffix-diffusion-seed-base", type=int, default=20260701)
+    parser.add_argument(
+        "--causal-suffix-diffusion-selected-offset",
+        type=int,
+        default=-1,
+        help=(
+            "Diagnostic fixed candidate selector. Values <0 use the first "
+            "requested offset present in the checkpoint metadata."
+        ),
+    )
+    parser.add_argument(
+        "--causal-suffix-diffusion-selected-sample",
+        type=int,
+        default=0,
+        help="Diagnostic fixed sample index for causal_suffix_diffusion live smoke.",
+    )
     parser.add_argument("--clip-live-actions", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--dp-handoff-horizon",
@@ -334,6 +389,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--dp-handoff-chunk-horizon-sequence",
+        default="",
+        help=(
+            "Optional semicolon-separated per-iteration DP chunk horizons. "
+            "When set, item N overrides --dp-handoff-chunk-horizon for "
+            "receding iteration N. The final item is reused if needed."
+        ),
+    )
+    parser.add_argument(
         "--cosmos-step-handoff-gate",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -343,6 +407,640 @@ def parse_args() -> argparse.Namespace:
             "the next observe-decide iteration can immediately hand off a "
             "short chunk to frozen DP. This does not relax C_pi and does not "
             "use generated state as authority."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-mode",
+        choices=("disabled", "near_hole_gate"),
+        default="disabled",
+        help=(
+            "Optional automatic local finisher. disabled preserves old results. "
+            "near_hole_gate executes a bounded scripted 7D action only when a "
+            "live causal near-hole gate passes."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action",
+        default="0.004,0,0,0,0,0,-1",
+        help=(
+            "Comma-separated 7D pd_ee_delta_pose action for the scripted local "
+            "insertion finisher. It is clipped by the environment action bounds "
+            "when --clip-live-actions is active."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-force-gripper-action",
+        type=float,
+        default=float("nan"),
+        help=(
+            "Optional scalar gripper command applied to every scripted "
+            "insertion action after frame/tail construction. Use this to keep "
+            "the terminal finisher closed even when a *_keep_tail frame "
+            "preserves DP rotation tail values."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action-frame",
+        choices=(
+            "fixed",
+            "hole_frame_servo",
+            "hole_frame_servo_keep_tail",
+            "hole_frame_anchor_servo",
+            "hole_frame_anchor_servo_keep_tail",
+            "hole_frame_adaptive_anchor_servo_keep_tail",
+            "hole_frame_direct_target_servo_keep_tail",
+            "hole_frame_peg_pose_servo",
+            "hole_frame_peg_pose_servo_keep_tail",
+            "hole_frame_peg_pose_rot_servo_keep_gripper",
+            "hole_frame_peg_pose_rot_then_teacher_table",
+            "hole_frame_peg_pose_rot_then_direct_target",
+            "hole_frame_spiral_seat_keep_tail",
+            "world_frame_peg_head_servo_keep_tail",
+            "teacher_table_nearest_action",
+            "teacher_table_nearest_action_keep_tail",
+        ),
+        default="fixed",
+        help=(
+            "fixed uses the requested 7D action verbatim. hole_frame_servo "
+            "converts a bounded normalized hole-frame insertion/lateral "
+            "correction action into world xyz while preserving the requested "
+            "rotation/gripper. hole_frame_servo_keep_tail uses the same xyz "
+            "servo but preserves the most recent executed action tail "
+            "(rotation/gripper), normally from DP handoff. "
+            "hole_frame_anchor_servo drives the peg-head-at-hole error toward "
+            "a source action target anchor, normally an inserted/contact frame. "
+            "hole_frame_peg_pose_servo instead drives the live peg pose in the "
+            "hole frame toward the action target anchor, which can correct "
+            "contact-frame z/y errors that peg-head-only rel control misses. "
+            "hole_frame_direct_target_servo_keep_tail drives live "
+            "peg_head_at_hole toward --scripted-insertion-action-target-rel "
+            "without a source anchor and can use adaptive axis sign flips. "
+            "hole_frame_spiral_seat_keep_tail executes a bounded hole-axis "
+            "seating push with live y/z centering plus a small programmed "
+            "spiral dither, preserving the latest rotation/gripper tail. "
+            "hole_frame_peg_pose_rot_servo_keep_gripper additionally applies "
+            "a bounded rotation correction toward the action target anchor "
+            "while preserving only the gripper command from the latest tail. "
+            "world_frame_peg_head_servo_keep_tail computes a live target "
+            "peg-head world position from the current hole pose and target "
+            "peg_head_at_hole, then sends a bounded world xyz TCP action "
+            "while preserving the most recent rotation/gripper tail. "
+            "teacher_table_nearest_action selects a 7D pd_ee_delta_pose action "
+            "from an offline teacher terminal phase table using only the "
+            "current live terminal state as the query; the keep_tail variant "
+            "preserves the most recent rotation/gripper tail. "
+            "For Panda pd_ee_delta_pose, xyz action 1.0 is scaled by ManiSkill "
+            "to 0.1m."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-step-rel-x", type=float, default=0.32)
+    parser.add_argument("--scripted-insertion-lateral-gain", type=float, default=10.0)
+    parser.add_argument("--scripted-insertion-max-lateral-step", type=float, default=0.12)
+    parser.add_argument(
+        "--scripted-insertion-spiral-step-rel-x",
+        type=float,
+        default=0.02,
+        help=(
+            "Hole-frame x command used by hole_frame_spiral_seat_keep_tail. "
+            "This is a normalized pd_ee_delta_pose action component; Panda "
+            "scales 1.0 to 0.1m."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-spiral-x-direction", type=float, default=1.0)
+    parser.add_argument("--scripted-insertion-spiral-radius", type=float, default=0.006)
+    parser.add_argument("--scripted-insertion-spiral-radius-growth", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-spiral-period", type=int, default=8)
+    parser.add_argument("--scripted-insertion-spiral-center-gain", type=float, default=2.0)
+    parser.add_argument("--scripted-insertion-spiral-z-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--scripted-insertion-compound-switch-step",
+        type=int,
+        default=24,
+        help=(
+            "For compound scripted action frames, local step at which the "
+            "primitive switches from the first phase to the second phase."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action-target-source-frame",
+        type=int,
+        default=-1,
+        help=(
+            "Optional source frame used by hole_frame_anchor_servo as the local "
+            "finisher target. Values <0 fall back to the terminal pose anchor. "
+            "Use this to trigger at a preinsert anchor but servo toward an "
+            "inserted/contact-complete source frame."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action-target-rel",
+        default="",
+        help=(
+            "Optional comma-separated live hole-frame target peg_head_at_hole "
+            "xyz for anchor-free scripted action frames such as "
+            "world_frame_peg_head_servo_keep_tail. Example: -0.006,0,0 from "
+            "the live all-types geometric final-seat smoke. This target is a "
+            "programmed local goal, not a source suffix or future label."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-teacher-table-jsonl",
+        default="",
+        help=(
+            "Optional teacher_terminal_phase_rows.jsonl used only by "
+            "teacher_table_nearest_action* scripted action frames. The table "
+            "is offline experience for a local residual selector; it is not "
+            "source-suffix replay and must be validated by live rollout."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-teacher-table-k", type=int, default=1)
+    parser.add_argument("--scripted-insertion-teacher-table-min-offset", type=int, default=1)
+    parser.add_argument("--scripted-insertion-teacher-table-max-offset", type=int, default=48)
+    parser.add_argument("--scripted-insertion-teacher-table-query-weights", default="1,2,4")
+    parser.add_argument("--scripted-insertion-teacher-table-max-distance", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-teacher-table-min-action-x", type=float, default=-1.0e9)
+    parser.add_argument("--scripted-insertion-teacher-table-max-action-x", type=float, default=1.0e9)
+    parser.add_argument(
+        "--scripted-insertion-teacher-table-action-x-floor",
+        type=float,
+        default=float("nan"),
+        help=(
+            "Default NaN disables this bounded automatic foot. When finite, "
+            "teacher-table selected action[0] is raised to at least this "
+            "normalized pd_ee_delta_pose value while preserving the selected "
+            "teacher y/z/rotation/gripper components unless other tail options "
+            "override them."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-teacher-table-scenario-match",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When enabled, only rows with scenario matching --scenario are used "
+            "if such rows exist. Default false avoids scenario-label control flow."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action-target-gain",
+        type=float,
+        default=10.0,
+        help=(
+            "Gain applied to target_rel - live_rel for "
+            "hole_frame_anchor_servo. The x component is capped by abs("
+            "--scripted-insertion-step-rel-x), y/z by "
+            "--scripted-insertion-max-lateral-step."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-action-target-rot-gain",
+        type=float,
+        default=3.0,
+        help=(
+            "Gain for hole_frame_peg_pose_rot_servo_keep_gripper. The live "
+            "target-source rotation error is converted to a world-frame "
+            "rotation-vector tail and clipped by "
+            "--scripted-insertion-action-target-rot-cap."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-action-target-rot-cap", type=float, default=0.35)
+    parser.add_argument(
+        "--scripted-insertion-action-target-rot-source",
+        choices=("peg", "tcp"),
+        default="peg",
+        help="Pose feature used for the bounded rotation correction.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-target-l2",
+        type=float,
+        default=-1.0,
+        help=(
+            "Default <0 disables the contact-seat phase. When the live distance "
+            "to the action target anchor is <= this threshold, target pose/rot "
+            "servo is suspended and the primitive executes a bounded hole-axis "
+            "seating push with optional small lateral correction."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-latch",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Once the contact-seat threshold passes inside a scripted local "
+            "primitive, keep contact-seat active for the remaining local steps. "
+            "Default false preserves the original per-step threshold behavior."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-step-rel-x", type=float, default=0.06)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-servo",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Default false preserves the fixed contact-seat x push. When true, "
+            "the contact-seat phase closes the remaining live peg_head_at_hole "
+            "x error toward --scripted-insertion-contact-seat-target-rel-x "
+            "with a bounded hole-axis step."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-target-rel-x",
+        type=float,
+        default=0.0,
+        help="Target peg_head_at_hole x value for contact-seat x-servo mode.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-servo-gain",
+        type=float,
+        default=8.0,
+        help="Gain for contact-seat x-servo mode before step clipping.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-servo-direction",
+        type=float,
+        default=1.0,
+        help=(
+            "Hole-frame x command sign for a positive remaining rel-x error. "
+            "Use -1.0 when live trace shows positive hole-x regresses rel-x."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-min-step-rel-x",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional minimum positive x step while x-servo error remains "
+            "positive. Default 0 disables the minimum."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-max-step-rel-x",
+        type=float,
+        default=-1.0,
+        help=(
+            "Optional independent cap for contact-seat x-servo steps. Default "
+            "<0 preserves the old cap from --scripted-insertion-step-rel-x."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-stop-on-x-regression",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Default false preserves existing behavior. When true, stop the "
+            "scripted local finisher if contact-seat x-servo increases the "
+            "absolute live rel-x error beyond the configured tolerance."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-regression-tolerance",
+        type=float,
+        default=0.0005,
+        help="Allowed rel-x error regression before stopping contact-seat x-servo.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-regression-policy",
+        choices=("stop", "disable_contact_seat_continue"),
+        default="stop",
+        help=(
+            "Policy after contact-seat x-servo regresses live rel-x. Default "
+            "stop preserves existing guard behavior. disable_contact_seat_continue "
+            "turns off contact-seat for the rest of this local primitive and "
+            "continues the target-anchor servo instead of handing control back "
+            "to DP immediately."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-probe-policy",
+        choices=("disabled", "disable_on_nonimprovement", "flip_once_on_nonimprovement"),
+        default="disabled",
+        help=(
+            "Default disabled preserves existing behavior. With "
+            "disable_on_nonimprovement, the first live contact-seat step is "
+            "treated as a probe; if rel-x does not improve enough, lateral "
+            "error regresses too much, or grasp is lost, contact-seat is "
+            "disabled for the rest of this local primitive. With "
+            "flip_once_on_nonimprovement, the first failed probe automatically "
+            "flips the contact-seat x-servo direction once and probes the "
+            "flipped direction; a second failed probe disables contact-seat."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-probe-min-x-improvement", type=float, default=0.0001)
+    parser.add_argument("--scripted-insertion-contact-seat-probe-max-lateral-regression", type=float, default=0.0002)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-probe-require-grasp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-lateral-gain", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-lateral-step", type=float, default=0.02)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-min-servo-steps",
+        type=int,
+        default=-1,
+        help=(
+            "Default <0 disables this trigger. If >=0, allow contact-seat after "
+            "at least this many target-servo steps once the live target-anchor "
+            "error is below --scripted-insertion-contact-seat-max-servo-l2."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-max-servo-l2",
+        type=float,
+        default=-1.0,
+        help=(
+            "Error threshold used with --scripted-insertion-contact-seat-min-servo-steps. "
+            "Default <0 disables this trigger."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-max-servo-steps",
+        type=int,
+        default=-1,
+        help=(
+            "Default <0 disables this trigger. If >=0, force contact-seat after "
+            "this many local servo steps even if the target-distance threshold "
+            "has not passed."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-plateau-window",
+        type=int,
+        default=0,
+        help=(
+            "Default 0 disables plateau trigger. If >0, force contact-seat after "
+            "this many consecutive servo steps without target-error improvement "
+            "larger than --scripted-insertion-contact-seat-improvement-epsilon."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-plateau-max-l2",
+        type=float,
+        default=-1.0,
+        help=(
+            "Optional max target-anchor error for the plateau trigger. Default "
+            "<0 means no max-l2 check."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-improvement-epsilon",
+        type=float,
+        default=0.0005,
+        help="Minimum target-error improvement counted as progress during servo phase.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-anchor-stop-on-target-regression",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "For hole_frame_anchor_servo modes, stop the local primitive before "
+            "the next step if the measured live distance to the action target "
+            "anchor has increased beyond the tolerance. This prevents a bounded "
+            "local foot from continuing to push after contact dynamics start "
+            "moving away from the inserted/contact target."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-anchor-regression-tolerance", type=float, default=0.0005)
+    parser.add_argument(
+        "--scripted-insertion-stop-on-target-rel-x-regression",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Stop a scripted local primitive when the live peg_head_at_hole x "
+            "error to the configured action target rel-x gets worse. This is a "
+            "live-state safety stop for terminal seating probes; it does not "
+            "restore any previous state."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-target-rel-x-regression-tolerance",
+        type=float,
+        default=0.0005,
+        help="Allowed target-rel-x error regression before stopping the primitive.",
+    )
+    parser.add_argument(
+        "--scripted-insertion-adaptive-flip-axes",
+        default="",
+        help=(
+            "Comma-separated axes allowed to flip sign in the adaptive anchor "
+            "finisher after a measured live regression. Default empty records "
+            "regressions but keeps the programmed signs fixed."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-lateral-sign",
+        type=float,
+        default=-1.0,
+        help=(
+            "Sign applied to the live hole-frame y error before lateral gain. "
+            "Default -1 preserves the original negative-feedback convention. "
+            "Use +1 only for source-audited insertion-axis diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-z-sign",
+        type=float,
+        default=-1.0,
+        help=(
+            "Sign applied to the live hole-frame z error before z gain. Default "
+            "-1 preserves the original convention; +1 is source-audited for "
+            "the current PegInsertionSide terminal seating diagnostic."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-axis-only-after-step",
+        type=int,
+        default=-1,
+        help=(
+            "Default -1 disables the contact-aware seating variant. When set "
+            "to N with hole_frame_servo, local scripted-insertion steps >= N "
+            "drop lateral y/z correction and execute only the bounded hole-axis "
+            "push. This is intended for already aligned near-contact seating, "
+            "not for far alignment."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-ignore-grasp-after-trigger",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When enabled, the primitive may continue after the initial live "
+            "near-hole trigger if the only failing step gate check is grasped. "
+            "The x/y/z/hole-speed/action-budget safety checks still apply."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-stop-on-success",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When enabled, stop the local scripted insertion primitive as soon "
+            "as live simulator success is observed, even during a full-episode "
+            "rollout. This preserves an automatically reached inserted state "
+            "instead of continuing to push until the step budget is exhausted."
+        ),
+    )
+    parser.add_argument(
+        "--scripted-insertion-once",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When enabled, execute the scripted insertion primitive at most "
+            "once in the whole live loop. Later iterations may hand off to DP "
+            "or other controllers, but will not repeat the local foot and risk "
+            "destroying an improved near-hole state."
+        ),
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-action-frame",
+        default="",
+        help=(
+            "Optional action-frame override used only for the scripted insertion "
+            "primitive executed after a frozen-DP handoff chunk. This allows a "
+            "teacher-table approach foot before DP and a different bounded "
+            "live-state seating primitive after DP, without source suffix replay "
+            "or per-episode manual choices."
+        ),
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-max-steps",
+        type=int,
+        default=-1,
+        help="Optional max-step override for the post-DP scripted finisher.",
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-action-target-rel",
+        default="",
+        help=(
+            "Optional action-target-rel override for the post-DP scripted "
+            "finisher. Empty means reuse --scripted-insertion-action-target-rel."
+        ),
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-action-frame-sequence",
+        default="",
+        help=(
+            "Optional semicolon-separated per-post-DP scripted action frames. "
+            "When set, item N overrides --post-dp-scripted-insertion-action-frame "
+            "for the Nth post-DP scripted execution. The final item is reused "
+            "if more executions occur."
+        ),
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-max-steps-sequence",
+        default="",
+        help=(
+            "Optional semicolon-separated max-step overrides paired with "
+            "--post-dp-scripted-insertion-action-frame-sequence."
+        ),
+    )
+    parser.add_argument(
+        "--post-dp-scripted-insertion-action-target-rel-sequence",
+        default="",
+        help=(
+            "Optional semicolon-separated action-target-rel overrides paired "
+            "with --post-dp-scripted-insertion-action-frame-sequence. Each "
+            "item may contain commas, for example '-0.080,0,0;-0.006,0,0'."
+        ),
+    )
+    parser.add_argument(
+        "--stop-after-post-dp-scripted-insertion",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Stop the receding loop after an executed post-DP scripted finisher, "
+            "even if success is still false. This preserves the live automated "
+            "finisher outcome for smoke inspection and prevents another "
+            "teacher/DP cycle from destroying a near-insertion state."
+        ),
+    )
+    parser.add_argument(
+        "--oracle-final-seat-mode",
+        choices=("disabled", "source_state"),
+        default="disabled",
+        help=(
+            "Demo-only final seating override. source_state restores a source "
+            "inserted env_state after the automated controller has run. This is "
+            "manual/oracle demo evidence, not method success."
+        ),
+    )
+    parser.add_argument("--oracle-final-seat-source-frame", type=int, default=300)
+    parser.add_argument(
+        "--live-geometric-final-seat-mode",
+        choices=("disabled", "peg_head_to_hole"),
+        default="disabled",
+        help=(
+            "Automatic smoke-only final seat from current live geometry. "
+            "peg_head_to_hole computes a peg pose that places the current "
+            "peg-head frame at the live hole frame target, without reading "
+            "future source states or replaying a saved successful suffix."
+        ),
+    )
+    parser.add_argument(
+        "--live-geometric-final-seat-target-rel",
+        default="-0.006,0,0",
+        help="Comma-separated target peg_head_at_hole xyz for live geometric final-seat smoke.",
+    )
+    parser.add_argument("--scripted-insertion-max-steps", type=int, default=8)
+    parser.add_argument("--scripted-insertion-min-rel-x", type=float, default=-0.04)
+    parser.add_argument("--scripted-insertion-max-rel-x", type=float, default=0.03)
+    parser.add_argument("--scripted-insertion-max-abs-y", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-abs-z", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-hole-speed", type=float, default=0.01)
+    parser.add_argument(
+        "--scripted-insertion-terminal-pose-gate",
+        choices=("disabled", "source_anchor"),
+        default="disabled",
+        help=(
+            "Default disabled preserves older scripted-finisher behavior. "
+            "source_anchor additionally requires the current live TCP/peg/hole "
+            "pose to match a successful source insertion anchor before blind "
+            "seating is allowed. The anchor is read once from --source-h5 and "
+            "is not a future live controller input."
+        ),
+    )
+    parser.add_argument("--scripted-insertion-terminal-anchor-source-frame", type=int, default=165)
+    parser.add_argument("--scripted-insertion-terminal-max-rel-l2", type=float, default=0.01)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-pos-l2", type=float, default=0.02)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-rot-rad", type=float, default=0.20)
+    parser.add_argument("--scripted-insertion-terminal-max-tcp-hole-pos-l2", type=float, default=0.08)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-pos-l2", type=float, default=0.05)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-rot-rad", type=float, default=0.05)
+    parser.add_argument(
+        "--scripted-insertion-require-grasp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--scripted-insertion-stop-on-gate-fail",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When true, re-evaluate the scripted insertion gate after every "
+            "primitive step and abort the primitive if the live state leaves "
+            "the near-hole region."
+        ),
+    )
+    parser.add_argument(
+        "--pretrigger-scripted-gate-stop",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Diagnostic/controller option for frozen-DP pretrigger execution. "
+            "When enabled, stop the live DP prefix as soon as the programmed "
+            "scripted insertion gate passes, so the main loop can automatically "
+            "try DP handoff or the local finisher from that real live state."
+        ),
+    )
+    parser.add_argument(
+        "--dp-action-seed-base",
+        type=int,
+        default=-1,
+        help=(
+            "Optional deterministic seed base for frozen-DP diffusion sampling. "
+            "Values <0 preserve the original stochastic DP behavior. When set, "
+            "pretrigger DP, DP-prior chunks, and DP handoff calls each derive "
+            "and record a per-call seed so live rollouts are reproducible."
         ),
     )
     parser.add_argument(
@@ -370,6 +1068,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="When positive, print live-loop progress every N pretrigger steps.",
+    )
+    parser.add_argument(
+        "--pretrigger-debug-steps",
+        type=int,
+        default=3,
+        help=(
+            "When live progress is enabled, emit fine-grained stage markers for "
+            "the first N frozen-DP pretrigger steps. This is diagnostic logging "
+            "only and does not change control."
+        ),
     )
     parser.add_argument("--continuability-min-rel-x", type=float, default=-0.08)
     parser.add_argument("--continuability-max-rel-x", type=float, default=0.04)
@@ -441,6 +1149,75 @@ def write_json(path: Path, data: Any) -> None:
 
 def write_action_json(path: Path, raw: np.ndarray) -> None:
     write_json(path, {"action": raw.astype(float).tolist()})
+
+
+def semicolon_sequence_item(value: str, index: int) -> str:
+    items = [item.strip() for item in str(value or "").split(";") if item.strip()]
+    if not items:
+        return ""
+    return items[min(max(int(index), 0), len(items) - 1)]
+
+
+def dp_action_seed(
+    *,
+    args: argparse.Namespace,
+    call_site: str,
+    prefix_frame: int,
+    iteration: int,
+    dp_call_index: int,
+) -> int | None:
+    base = int(getattr(args, "dp_action_seed_base", -1))
+    if base < 0:
+        return None
+    site_offsets = {
+        "pretrigger": 0,
+        "dp_prior": 100_000_000,
+        "dp_handoff": 200_000_000,
+    }
+    return int(
+        base
+        + site_offsets.get(str(call_site), 300_000_000)
+        + int(prefix_frame) * 1009
+        + int(iteration) * 9173
+        + int(dp_call_index) * 100_003
+    )
+
+
+def dp_get_action_seeded(
+    *,
+    dp_agent: Any,
+    obs_tensor: Any,
+    stack: dict[str, Any],
+    args: argparse.Namespace,
+    call_site: str,
+    prefix_frame: int,
+    iteration: int,
+    dp_call_index: int,
+) -> tuple[Any, dict[str, Any]]:
+    torch = stack["torch"]
+    seed = dp_action_seed(
+        args=args,
+        call_site=call_site,
+        prefix_frame=prefix_frame,
+        iteration=iteration,
+        dp_call_index=dp_call_index,
+    )
+    if seed is not None:
+        seed32 = int(seed) % (2**32 - 1)
+        torch.manual_seed(seed32)
+        if hasattr(torch, "cuda") and torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed32)
+    with torch.no_grad():
+        action_seq = dp_agent.get_action(obs_tensor)
+    return action_seq, {
+        "call_site": str(call_site),
+        "dp_action_seed_base": int(getattr(args, "dp_action_seed_base", -1)),
+        "dp_action_seed": None if seed is None else int(seed),
+        "dp_action_seed_mod32": None if seed is None else int(seed) % (2**32 - 1),
+        "prefix_frame_index": int(prefix_frame),
+        "iteration": int(iteration),
+        "dp_call_index": int(dp_call_index),
+    }
 
 
 def build_residual_executor_model(feature_dim: int, target_dim: int, hidden_dim: int, num_layers: int, dropout: float) -> Any:
@@ -948,6 +1725,232 @@ def _diffusion_candidate_samples(
     return samples
 
 
+def load_causal_suffix_diffusion_checkpoint(path: Path) -> dict[str, Any]:
+    import torch
+    from train_causal_contact_action_suffix_diffusion import CausalSuffixDiffusionNet
+
+    checkpoint_path = path.resolve()
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"missing causal suffix diffusion checkpoint: {checkpoint_path}")
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    ckpt_args = payload.get("args") or {}
+    manifest = payload.get("manifest") or {}
+    metadata = manifest.get("metadata") or {}
+    model = CausalSuffixDiffusionNet(
+        feature_dim=int(payload["feature_dim"]),
+        target_dim=int(payload["target_dim"]),
+        hidden_dim=int(ckpt_args.get("hidden_dim", 2048)),
+        num_layers=int(ckpt_args.get("num_layers", 5)),
+        dropout=float(ckpt_args.get("dropout", 0.05)),
+    )
+    model.load_state_dict(payload["model_state_dict"])
+    model.eval()
+    return {
+        "checkpoint_path": str(checkpoint_path),
+        "payload": payload,
+        "model": model,
+        "manifest": manifest,
+        "metadata": metadata,
+        "x_mean": np.asarray(payload["x_mean"], dtype=np.float32),
+        "x_std": np.asarray(payload["x_std"], dtype=np.float32),
+        "y_mean": np.asarray(payload["y_mean"], dtype=np.float32),
+        "y_std": np.asarray(payload["y_std"], dtype=np.float32),
+    }
+
+
+def causal_suffix_diffusion_feature(
+    *,
+    query_rel: np.ndarray,
+    offset: int,
+    prefix_frame: int,
+    grasped: bool,
+    offset_values: list[int],
+) -> np.ndarray:
+    query = np.asarray(query_rel, dtype=np.float32).reshape(-1)[:3]
+    if query.size < 3:
+        query = np.pad(query, (0, 3 - query.size), mode="constant")
+    offset_onehot = np.zeros((len(offset_values),), dtype=np.float32)
+    offset_ints = [int(x) for x in offset_values]
+    if int(offset) not in set(offset_ints):
+        raise ValueError(f"offset {offset} not in diffusion checkpoint offset values {offset_values}")
+    offset_onehot[offset_ints.index(int(offset))] = 1.0
+    abs_y = abs(float(query[1]))
+    abs_z = abs(float(query[2]))
+    prefix = max(0, min(int(prefix_frame), 300))
+    values = np.concatenate(
+        [
+            query.astype(np.float32),
+            np.asarray([abs_y], dtype=np.float32),
+            np.asarray([abs_z], dtype=np.float32),
+            np.asarray([abs_y + abs_z], dtype=np.float32),
+            np.asarray([float(np.linalg.norm(query[1:3]))], dtype=np.float32),
+            np.asarray([float(offset) / 96.0], dtype=np.float32),
+            np.asarray([float(prefix) / 300.0], dtype=np.float32),
+            np.asarray([(300.0 - float(prefix)) / 300.0], dtype=np.float32),
+            np.asarray([1.0], dtype=np.float32),
+            np.asarray([1.0 if bool(grasped) else 0.0], dtype=np.float32),
+            offset_onehot,
+        ],
+        axis=0,
+    )
+    return values.reshape(1, -1).astype(np.float32)
+
+
+def sample_causal_suffix_diffusion_action(
+    *,
+    diffusion: dict[str, Any],
+    feature: np.ndarray,
+    sample_seed: int,
+    temperature: float,
+) -> np.ndarray:
+    import torch
+    from train_causal_contact_action_suffix_diffusion import diffusion_schedule
+
+    payload = diffusion["payload"]
+    args_payload = payload.get("args") or {}
+    metadata = (payload.get("manifest") or {}).get("metadata") or {}
+    horizon = int(metadata.get("horizon", 96))
+    action_dim = int(metadata.get("action_dim", int(payload["target_dim"]) // max(1, horizon)))
+    x_mean = np.asarray(diffusion["x_mean"], dtype=np.float32)
+    x_std = np.asarray(diffusion["x_std"], dtype=np.float32)
+    y_mean = np.asarray(diffusion["y_mean"], dtype=np.float32)
+    y_std = np.asarray(diffusion["y_std"], dtype=np.float32)
+    if feature.shape != x_mean.shape:
+        raise ValueError(f"causal suffix diffusion feature shape {feature.shape} != expected {x_mean.shape}")
+    steps = int(args_payload.get("diffusion_steps", 32))
+    beta_start = float(args_payload.get("diffusion_beta_start", 1e-4))
+    beta_end = float(args_payload.get("diffusion_beta_end", 2e-2))
+    model = diffusion["model"]
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(int(sample_seed))
+    x = torch.from_numpy(((feature - x_mean) / x_std).astype(np.float32))
+    y = torch.randn((1, int(payload["target_dim"])), generator=generator, dtype=torch.float32) * float(temperature)
+    alpha_bars = diffusion_schedule(steps, beta_start, beta_end, torch.device("cpu"))
+    with torch.no_grad():
+        for t in range(int(alpha_bars.shape[0]) - 1, -1, -1):
+            t_tensor = torch.full((1,), int(t), dtype=torch.long)
+            t_norm = t_tensor.float() / max(1, int(alpha_bars.shape[0]) - 1)
+            alpha_bar = alpha_bars[t].reshape(1, 1)
+            pred_noise = model(x, y, t_norm)
+            x0 = (y - torch.sqrt(1.0 - alpha_bar) * pred_noise) / torch.sqrt(alpha_bar)
+            if t > 0:
+                prev_alpha_bar = alpha_bars[t - 1].reshape(1, 1)
+                y = torch.sqrt(prev_alpha_bar) * x0 + torch.sqrt(1.0 - prev_alpha_bar) * pred_noise
+            else:
+                y = x0
+    y_np = y.cpu().numpy() * y_std + y_mean
+    return y_np.reshape(horizon, action_dim).astype(np.float32)
+
+
+def causal_suffix_diffusion_action_chunk(
+    *,
+    diffusion: dict[str, Any],
+    live: dict[str, Any],
+    prefix_frame: int,
+    iteration: int,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    metadata = diffusion.get("metadata") or {}
+    offset_values = [int(x) for x in metadata.get("offset_values", [])]
+    if not offset_values:
+        raise ValueError("causal suffix diffusion checkpoint missing offset_values metadata")
+    available_offsets = set(offset_values)
+    requested_offsets = [offset for offset in _parse_nonnegative_int_list(str(args.causal_suffix_diffusion_offsets)) if offset in available_offsets]
+    if not requested_offsets:
+        requested_offsets = offset_values
+    sample_count = max(1, int(args.causal_suffix_diffusion_samples_per_offset))
+    selected_offset = int(args.causal_suffix_diffusion_selected_offset)
+    if selected_offset < 0:
+        selected_offset = int(requested_offsets[0])
+    if selected_offset not in available_offsets:
+        raise ValueError(f"selected causal suffix offset {selected_offset} is not in checkpoint offsets {offset_values}")
+    selected_sample = max(0, int(args.causal_suffix_diffusion_selected_sample))
+    if selected_sample >= sample_count:
+        raise ValueError(
+            f"selected causal suffix sample {selected_sample} requires "
+            f"--causal-suffix-diffusion-samples-per-offset > {selected_sample}"
+        )
+    query = np.asarray(live.get("peg_head_at_hole", np.zeros(3, dtype=np.float32)), dtype=np.float32).reshape(-1)[:3]
+    if query.size < 3:
+        query = np.pad(query, (0, 3 - query.size), mode="constant")
+    grasped = bool(live.get("grasped", False))
+    candidates: list[dict[str, Any]] = []
+    selected_actions: np.ndarray | None = None
+    selected_seed: int | None = None
+    selected_name = ""
+    for offset in requested_offsets:
+        feature = causal_suffix_diffusion_feature(
+            query_rel=query,
+            offset=int(offset),
+            prefix_frame=int(prefix_frame),
+            grasped=grasped,
+            offset_values=offset_values,
+        )
+        for sample_i in range(sample_count):
+            seed = (
+                int(args.causal_suffix_diffusion_seed_base)
+                + int(offset) * 1009
+                + int(prefix_frame) * 17
+                + int(iteration) * 9173
+                + int(sample_i)
+            )
+            actions = sample_causal_suffix_diffusion_action(
+                diffusion=diffusion,
+                feature=feature,
+                sample_seed=seed,
+                temperature=float(args.causal_suffix_diffusion_temperature),
+            )[:, : int(args.robot_action_dim)]
+            name = f"causal_suffix_diffusion_o{int(offset)}_s{int(sample_i)}"
+            is_selected = int(offset) == int(selected_offset) and int(sample_i) == int(selected_sample)
+            candidates.append(
+                {
+                    "name": name,
+                    "offset": int(offset),
+                    "sample_index": int(sample_i),
+                    "seed": int(seed),
+                    "selected": bool(is_selected),
+                    "action_stats": array_stats(actions),
+                }
+            )
+            if is_selected:
+                selected_actions = actions.astype(np.float32)
+                selected_seed = int(seed)
+                selected_name = name
+    if selected_actions is None or selected_seed is None:
+        raise RuntimeError("causal suffix diffusion did not generate the selected candidate")
+    execute_steps = max(1, min(int(args.causal_suffix_diffusion_execute_steps), int(selected_actions.shape[0])))
+    selected_chunk = selected_actions[:execute_steps].astype(np.float32)
+    return {
+        "ok": bool(np.isfinite(selected_chunk).all()),
+        "controller_action_source": "causal_suffix_diffusion",
+        "checkpoint_path": str(diffusion["checkpoint_path"]),
+        "candidate_selector_mode": "fixed_offset_sample_live_smoke",
+        "selected_candidate_name": selected_name,
+        "selected_offset": int(selected_offset),
+        "selected_sample_index": int(selected_sample),
+        "selected_seed": int(selected_seed),
+        "requested_offsets": [int(x) for x in requested_offsets],
+        "checkpoint_offset_values": [int(x) for x in offset_values],
+        "sample_count_per_offset": int(sample_count),
+        "execute_steps": int(execute_steps),
+        "query_peg_head_at_hole": query.astype(float).tolist(),
+        "query_grasped": bool(grasped),
+        "prefix_frame_index": int(prefix_frame),
+        "iteration": int(iteration),
+        "temperature": float(args.causal_suffix_diffusion_temperature),
+        "selected_action_stats": array_stats(selected_chunk),
+        "full_selected_action_stats": array_stats(selected_actions),
+        "candidates": candidates,
+        "denormalized_robot_action_chunk": selected_chunk.astype(float).tolist(),
+        "boundary": (
+            "Causal-suffix diffusion generates only a short live-state action "
+            "prefix. It does not use future labels or source suffix replay. "
+            "After execution the existing programmed live-state gate decides "
+            "whether frozen DP can continue."
+        ),
+    }
+
+
 def load_candidate_executor_checkpoint(path: Path, robot_action_dim: int) -> dict[str, Any]:
     import torch
 
@@ -1339,13 +2342,25 @@ def dp_prior_chunk_from_agent(
     dp_obs_history: list[np.ndarray],
     stack: dict[str, Any],
     horizon: int,
+    args: argparse.Namespace,
+    prefix_frame: int,
+    iteration: int,
+    dp_call_index: int,
 ) -> np.ndarray:
     torch = stack["torch"]
     dp_device = next(dp_agent.parameters()).device
     obs_seq = np.stack(dp_obs_history[-2:], axis=0)[None].astype(np.float32)
     obs_tensor = torch.as_tensor(obs_seq, device=dp_device, dtype=torch.float32)
-    with torch.no_grad():
-        action_seq = dp_agent.get_action(obs_tensor)
+    action_seq, seed_record = dp_get_action_seeded(
+        dp_agent=dp_agent,
+        obs_tensor=obs_tensor,
+        stack=stack,
+        args=args,
+        call_site="dp_prior",
+        prefix_frame=prefix_frame,
+        iteration=iteration,
+        dp_call_index=dp_call_index,
+    )
     if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu" or hasattr(action_seq, "detach"):
         action_seq_np = action_seq.detach().cpu().numpy()
     else:
@@ -1355,6 +2370,7 @@ def dp_prior_chunk_from_agent(
         raise RuntimeError(f"DP prior action sequence has invalid shape {prior.shape}")
     prior = prior[:, :7]
     prior, _ = _pad_rows(prior, int(horizon))
+    dp_prior_chunk_from_agent.last_seed_record = seed_record
     return prior.astype(np.float32)
 
 
@@ -1727,8 +2743,12 @@ def candidate_executor_action_chunk(
         dp_prior_live_gate_block_flags: list[bool] = []
         source_suffix_meta_by_name = {str(item["name"]): item for item in source_suffix_items}
         phase = str(context_result.get("phase_name") or "unknown")
+        allow_dp_prior_before_gate = bool(
+            getattr(args, "candidate_executor_allow_dp_prior_before_gate", False)
+        )
         dp_prior_executable_by_live_gate = bool(
             (context_result.get("continuability_gate") or {}).get("ok", False)
+            or allow_dp_prior_before_gate
         )
         phase_caps = dict(bundle.get("phase_residual_l2_caps") or {})
         cap_value = float(
@@ -1890,6 +2910,10 @@ def candidate_executor_action_chunk(
             min_progress_delta = float(args.candidate_outcome_scorer_min_progress_delta)
             min_continuable = float(args.candidate_outcome_scorer_min_continuable_prob)
             min_inserted = float(args.candidate_outcome_scorer_min_inserted_prob)
+            min_pred_x = float(args.candidate_outcome_scorer_min_pred_state_x)
+            max_pred_x = float(args.candidate_outcome_scorer_max_pred_state_x)
+            max_pred_abs_y = float(args.candidate_outcome_scorer_max_pred_state_abs_y)
+            max_pred_abs_z = float(args.candidate_outcome_scorer_max_pred_state_abs_z)
             for idx, (name, _cand_norm) in enumerate(candidates):
                 if name == "dp_prior":
                     if dp_prior_live_gate_block_flags[idx]:
@@ -1913,6 +2937,19 @@ def candidate_executor_action_chunk(
                     outcome_validity_reasons[idx].append(
                         f"inserted<{min_inserted:g}"
                     )
+                pred_xyz = outcome_pred_state_np[idx, :3]
+                if float(pred_xyz[0]) < min_pred_x:
+                    validity_mask_np[idx] = False
+                    outcome_validity_reasons[idx].append(f"pred_state_x<{min_pred_x:g}")
+                if float(pred_xyz[0]) > max_pred_x:
+                    validity_mask_np[idx] = False
+                    outcome_validity_reasons[idx].append(f"pred_state_x>{max_pred_x:g}")
+                if max_pred_abs_y >= 0.0 and abs(float(pred_xyz[1])) > max_pred_abs_y:
+                    validity_mask_np[idx] = False
+                    outcome_validity_reasons[idx].append(f"abs_pred_state_y>{max_pred_abs_y:g}")
+                if max_pred_abs_z >= 0.0 and abs(float(pred_xyz[2])) > max_pred_abs_z:
+                    validity_mask_np[idx] = False
+                    outcome_validity_reasons[idx].append(f"abs_pred_state_z>{max_pred_abs_z:g}")
             validity_mask = torch.as_tensor(validity_mask_np, device=outcome_device, dtype=torch.bool)
             outcome_score = torch.where(validity_mask, outcome_score, torch.full_like(outcome_score, -1.0e9))
             outcome_scores_np = outcome_score.detach().cpu().numpy().astype(np.float32)
@@ -2106,6 +3143,10 @@ def candidate_executor_action_chunk(
                 "min_progress_delta": float(args.candidate_outcome_scorer_min_progress_delta),
                 "min_continuable_prob": float(args.candidate_outcome_scorer_min_continuable_prob),
                 "min_inserted_prob": float(args.candidate_outcome_scorer_min_inserted_prob),
+                "min_pred_state_x": float(args.candidate_outcome_scorer_min_pred_state_x),
+                "max_pred_state_x": float(args.candidate_outcome_scorer_max_pred_state_x),
+                "max_pred_state_abs_y": float(args.candidate_outcome_scorer_max_pred_state_abs_y),
+                "max_pred_state_abs_z": float(args.candidate_outcome_scorer_max_pred_state_abs_z),
                 "score_state_abs_axis_weights": np.asarray(
                     outcome_scorer.get("score_state_abs_axis_weights", np.zeros(3, dtype=np.float32)),
                     dtype=np.float32,
@@ -2126,6 +3167,9 @@ def candidate_executor_action_chunk(
         ),
         "dp_fallback_applied": bool(fallback_applied),
         "dp_prior_executable_by_live_gate": bool(dp_prior_executable_by_live_gate),
+        "candidate_executor_allow_dp_prior_before_gate": bool(
+            getattr(args, "candidate_executor_allow_dp_prior_before_gate", False)
+        ),
         "candidate_count": int(len(candidate_records)),
         "candidate_executor_short_prefix_steps": [
             int(item)
@@ -2561,6 +3605,11 @@ def write_video(path: Path, frames: list[Any], fps: int) -> None:
     imageio.mimsave(path, [np.asarray(frame) for frame in frames], fps=max(1, int(fps)))
 
 
+def append_live_frame(observed_frames: list[Any], env: Any, args: argparse.Namespace) -> None:
+    if bool(args.render_live_video):
+        observed_frames.append(_render_frame(env))
+
+
 def controller_timeline_from_summary(summary: dict[str, Any], frame_count: int) -> list[dict[str, Any]]:
     prefix_selection = summary.get("prefix_selection") or {}
     trigger_frame = prefix_selection.get("detected_frame_index")
@@ -2629,6 +3678,20 @@ def controller_timeline_from_summary(summary: dict[str, Any], frame_count: int) 
                         "target_motion_detected": True if trigger_frame_int is not None else timeline[frame_idx]["target_motion_detected"],
                         "wm_active": False,
                         "dp_active": True,
+                        "prefix_role": role,
+                        "iteration": iter_idx,
+                    }
+                )
+        for step in iteration.get("scripted_insertion_steps") or []:
+            frame_idx = int(step.get("global_action_index", -1)) + 1
+            if 0 <= frame_idx < frame_count:
+                timeline[frame_idx].update(
+                    {
+                        "controller": "SCRIPTED_INSERT",
+                        "target_motion_detected": True if trigger_frame_int is not None else timeline[frame_idx]["target_motion_detected"],
+                        "wm_active": False,
+                        "scripted_insertion_active": True,
+                        "dp_active": False,
                         "prefix_role": role,
                         "iteration": iter_idx,
                     }
@@ -2750,9 +3813,12 @@ def apply_external_target_pose(
     if args.external_target_mode == "none":
         return {"applied": False, "mode": "none", "source_frame": int(source_frame)}
 
-    frame = int(source_frame)
-    if frame < 0 or frame >= len(env_states):
+    requested_frame = int(source_frame)
+    frame = requested_frame
+    if frame < 0:
         raise IndexError(f"external target source frame {frame} outside env state length {len(env_states)}")
+    if frame >= len(env_states):
+        frame = len(env_states) - 1
     actors = env_states[frame].get("actors") if isinstance(env_states[frame], dict) else None
     if not isinstance(actors, dict) or "box_with_hole" not in actors:
         raise KeyError("source env_state is missing actors/box_with_hole for external target replay")
@@ -2769,7 +3835,9 @@ def apply_external_target_pose(
     return {
         "applied": True,
         "mode": "source_env_state",
+        "requested_source_frame": requested_frame,
         "source_frame": frame,
+        "source_frame_clamped": bool(frame != requested_frame),
         "actor": "box_with_hole",
         "target_actor_state_pq": actor_state[:7].astype(float).tolist(),
     }
@@ -2920,6 +3988,1869 @@ def continuability_gate(live: dict[str, Any], history: np.ndarray, prefix_frame:
     }
 
 
+def parse_scripted_insertion_action(args: argparse.Namespace) -> np.ndarray:
+    values = _parse_float_list(str(args.scripted_insertion_action))
+    if len(values) != int(args.robot_action_dim):
+        raise ValueError(
+            "--scripted-insertion-action must contain exactly "
+            f"{int(args.robot_action_dim)} values, got {len(values)}"
+        )
+    action = np.asarray(values, dtype=np.float32)
+    if not np.isfinite(action).all():
+        raise ValueError("--scripted-insertion-action contains non-finite values")
+    return action
+
+
+def scripted_insertion_action_target_rel(args: argparse.Namespace) -> np.ndarray | None:
+    raw = str(getattr(args, "scripted_insertion_action_target_rel", "") or "").strip()
+    if not raw:
+        return None
+    values = _parse_float_list(raw)
+    if len(values) != 3:
+        raise ValueError(
+            "--scripted-insertion-action-target-rel must contain exactly 3 values, "
+            f"got {len(values)}"
+        )
+    target = np.asarray(values, dtype=np.float32)
+    if not np.isfinite(target).all():
+        raise ValueError("--scripted-insertion-action-target-rel contains non-finite values")
+    return target
+
+
+def load_teacher_terminal_phase_table(path_text: str, args: argparse.Namespace) -> list[dict[str, Any]]:
+    path = Path(str(path_text)).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"missing teacher terminal phase table: {path}")
+    min_offset = int(getattr(args, "scripted_insertion_teacher_table_min_offset", 1))
+    max_offset = int(getattr(args, "scripted_insertion_teacher_table_max_offset", 48))
+    rows: list[dict[str, Any]] = []
+    with path.open("r") as f:
+        for line_no, line in enumerate(f, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            payload = json.loads(stripped)
+            action = np.asarray(payload.get("action"), dtype=np.float32).reshape(-1)
+            rel = np.asarray(payload.get("peg_head_at_hole"), dtype=np.float32).reshape(-1)
+            if action.shape[0] < int(args.robot_action_dim) or rel.shape[0] < 3:
+                continue
+            if not np.isfinite(action[: int(args.robot_action_dim)]).all() or not np.isfinite(rel[:3]).all():
+                continue
+            offset = int(payload.get("offset_to_first_success", -1))
+            if offset < min_offset or offset > max_offset:
+                continue
+            rows.append(
+                {
+                    "source_jsonl": str(path),
+                    "source_line": int(line_no),
+                    "scenario": str(payload.get("scenario", "")),
+                    "source_h5": str(payload.get("source_h5", "")),
+                    "action_frame": int(payload.get("action_frame", -1)),
+                    "first_success_frame": int(payload.get("first_success_frame", -1)),
+                    "offset_to_first_success": int(offset),
+                    "peg_head_at_hole": rel[:3].astype(np.float32),
+                    "action": action[: int(args.robot_action_dim)].astype(np.float32),
+                    "grasped": payload.get("grasped"),
+                    "inserted": payload.get("inserted"),
+                }
+            )
+    if not rows:
+        raise ValueError(f"teacher terminal phase table has no usable rows after filters: {path}")
+    return rows
+
+
+def teacher_terminal_table_action_for_live(
+    *,
+    live: dict[str, Any],
+    args: argparse.Namespace,
+    tail_action: np.ndarray | None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    rows = getattr(args, "scripted_insertion_teacher_table_rows", None)
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError(
+            "teacher_table_nearest_action requires "
+            "--scripted-insertion-teacher-table-jsonl with loaded rows"
+        )
+    query = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    weights = _fixed_width_vector(
+        str(getattr(args, "scripted_insertion_teacher_table_query_weights", "1,2,4")),
+        3,
+        default=1.0,
+    )
+    scenario = str(getattr(args, "scenario", ""))
+    scenario_match = bool(getattr(args, "scripted_insertion_teacher_table_scenario_match", False))
+    scenario_rows = [row for row in rows if str(row.get("scenario", "")) == scenario]
+    candidates = scenario_rows if scenario_match and scenario_rows else rows
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for row in candidates:
+        rel = np.asarray(row["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+        action = np.asarray(row["action"], dtype=np.float32).reshape(-1)[: int(args.robot_action_dim)]
+        if float(action[0]) < float(getattr(args, "scripted_insertion_teacher_table_min_action_x", -1.0e9)):
+            continue
+        if float(action[0]) > float(getattr(args, "scripted_insertion_teacher_table_max_action_x", 1.0e9)):
+            continue
+        dist = float(np.linalg.norm((rel - query) * weights))
+        max_dist = float(getattr(args, "scripted_insertion_teacher_table_max_distance", -1.0))
+        if max_dist >= 0.0 and dist > max_dist:
+            continue
+        scored.append((dist, row))
+    scored.sort(key=lambda item: item[0])
+    if not scored:
+        raise RuntimeError(
+            "teacher terminal table selector found no row within "
+            "--scripted-insertion-teacher-table-max-distance"
+        )
+    k = max(1, int(getattr(args, "scripted_insertion_teacher_table_k", 1)))
+    selected = scored[:k]
+    action = np.mean(
+        np.stack([np.asarray(row["action"], dtype=np.float32) for _dist, row in selected], axis=0),
+        axis=0,
+    ).astype(np.float32)
+    frame = str(getattr(args, "scripted_insertion_action_frame", "teacher_table_nearest_action"))
+    tail_source = "teacher_terminal_table_action"
+    if frame.endswith("_keep_tail") and tail_action is not None:
+        tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+        if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+            action[3:7] = tail[3:7]
+            tail_source = "teacher_table_xyz_with_most_recent_action_tail"
+    x_floor = float(getattr(args, "scripted_insertion_teacher_table_action_x_floor", float("nan")))
+    x_floor_record: dict[str, Any] = {"enabled": False}
+    if np.isfinite(x_floor):
+        previous_x = float(action[0])
+        action[0] = max(float(action[0]), x_floor)
+        x_floor_record = {
+            "enabled": True,
+            "floor": float(x_floor),
+            "previous_action_x": previous_x,
+            "applied_action_x": float(action[0]),
+            "boundary": (
+                "Programmed bounded local insertion foot applied after "
+                "teacher-table row selection. It only enforces a minimum "
+                "normalized x action and does not read future state or set "
+                "object poses."
+            ),
+        }
+    nearest_dist, nearest = selected[0]
+    return action, {
+        "action_frame": frame,
+        "action_source": "nearest_teacher_terminal_phase_table_action",
+        "action_unit": "normalized_pd_ee_delta_pose_action from teacher/planner H5 terminal phase",
+        "peg_head_at_hole_before": query.astype(float).tolist(),
+        "query_weights": weights.astype(float).tolist(),
+        "scenario": scenario,
+        "scenario_match_requested": scenario_match,
+        "scenario_match_active": bool(scenario_match and bool(scenario_rows)),
+        "candidate_count_before_action_filter": int(len(candidates)),
+        "scored_candidate_count": int(len(scored)),
+        "selected_count": int(len(selected)),
+        "nearest_distance": float(nearest_dist),
+        "max_distance": float(getattr(args, "scripted_insertion_teacher_table_max_distance", -1.0)),
+        "min_action_x": float(getattr(args, "scripted_insertion_teacher_table_min_action_x", -1.0e9)),
+        "max_action_x": float(getattr(args, "scripted_insertion_teacher_table_max_action_x", 1.0e9)),
+        "action_x_floor": x_floor_record,
+        "tail_source": tail_source,
+        "selected_rows": [
+            {
+                "rank": int(rank),
+                "distance": float(dist),
+                "scenario": str(row.get("scenario", "")),
+                "source_h5": str(row.get("source_h5", "")),
+                "source_line": int(row.get("source_line", -1)),
+                "action_frame": int(row.get("action_frame", -1)),
+                "first_success_frame": int(row.get("first_success_frame", -1)),
+                "offset_to_first_success": int(row.get("offset_to_first_success", -1)),
+                "row_peg_head_at_hole": np.asarray(row["peg_head_at_hole"], dtype=np.float32).astype(float).tolist(),
+                "row_action": np.asarray(row["action"], dtype=np.float32).astype(float).tolist(),
+            }
+            for rank, (dist, row) in enumerate(selected)
+        ],
+        "action": action.astype(float).tolist(),
+        "boundary": (
+            "Automatic local residual selector from offline teacher/planner "
+            "terminal experience. It queries only the current live state and "
+            "outputs bounded pd_ee_delta_pose actions; it does not restore "
+            "saved simulator state, set object poses, read future frames from "
+            "the current episode, or replay a hand-picked suffix. Live rollout "
+            "success remains required before any method claim."
+        ),
+    }
+
+
+def hole_pose_rotation_world(base_env: Any, stack: dict[str, Any]) -> np.ndarray:
+    common = stack["common"]
+    mat = common.to_numpy(base_env.box_hole_pose.to_transformation_matrix())[0]
+    return np.asarray(mat[:3, :3], dtype=np.float32)
+
+
+def quat_wxyz_to_matrix(quat: np.ndarray) -> np.ndarray:
+    q = np.asarray(quat, dtype=np.float64).reshape(-1)[:4]
+    norm = float(np.linalg.norm(q))
+    if norm <= 1.0e-12 or not np.isfinite(q).all():
+        return np.eye(3, dtype=np.float32)
+    w, x, y, z = q / norm
+    return np.asarray(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float32,
+    )
+
+
+def rotation_angle_rad(rot_delta: np.ndarray) -> float:
+    mat = np.asarray(rot_delta, dtype=np.float64).reshape(3, 3)
+    cos_value = (float(np.trace(mat)) - 1.0) * 0.5
+    cos_value = min(1.0, max(-1.0, cos_value))
+    return float(np.arccos(cos_value))
+
+
+def rotation_vector_from_matrix(rot_delta: np.ndarray) -> np.ndarray:
+    mat = np.asarray(rot_delta, dtype=np.float64).reshape(3, 3)
+    skew = np.asarray(
+        [
+            mat[2, 1] - mat[1, 2],
+            mat[0, 2] - mat[2, 0],
+            mat[1, 0] - mat[0, 1],
+        ],
+        dtype=np.float64,
+    )
+    angle = rotation_angle_rad(mat)
+    if angle < 1.0e-6:
+        return (0.5 * skew).astype(np.float32)
+    denom = 2.0 * float(np.sin(angle))
+    if abs(denom) < 1.0e-8:
+        return np.zeros(3, dtype=np.float32)
+    axis = skew / denom
+    return (axis * angle).astype(np.float32)
+
+
+def pose_features_in_hole_frame(tcp_pose: np.ndarray, peg_pose: np.ndarray, hole_pose: np.ndarray) -> dict[str, Any]:
+    tcp = np.asarray(tcp_pose, dtype=np.float32).reshape(-1)[:7]
+    peg = np.asarray(peg_pose, dtype=np.float32).reshape(-1)[:7]
+    hole = np.asarray(hole_pose, dtype=np.float32).reshape(-1)[:7]
+    hole_rot = quat_wxyz_to_matrix(hole[3:7])
+    peg_rot = quat_wxyz_to_matrix(peg[3:7])
+    tcp_rot = quat_wxyz_to_matrix(tcp[3:7])
+    hole_inv = hole_rot.T
+    return {
+        "tcp_pos_in_hole": (hole_inv @ (tcp[:3] - hole[:3])).astype(float).tolist(),
+        "peg_pos_in_hole": (hole_inv @ (peg[:3] - hole[:3])).astype(float).tolist(),
+        "tcp_rot_in_hole": (hole_inv @ tcp_rot).astype(float).tolist(),
+        "peg_rot_in_hole": (hole_inv @ peg_rot).astype(float).tolist(),
+        "hole_world_pos": hole[:3].astype(float).tolist(),
+        "hole_world_quat": hole[3:7].astype(float).tolist(),
+    }
+
+
+def load_scripted_source_pose_anchor(source_h5: Path, frame: int) -> dict[str, Any]:
+    if frame < 0:
+        raise ValueError("source pose anchor frame must be non-negative")
+    import h5py
+
+    with h5py.File(source_h5, "r") as h5:
+        if "traj_0" in h5 and "slots" in h5["traj_0"]:
+            slots = h5["traj_0"]["slots"]
+            if frame >= slots["peg_head_at_hole"].shape[0]:
+                raise IndexError(f"terminal anchor frame {frame} outside source slots")
+            tcp_pose = np.asarray(slots["tcp_pose"][frame], dtype=np.float32).reshape(-1)[:7]
+            peg_pose = np.asarray(slots["peg_pose"][frame], dtype=np.float32).reshape(-1)[:7]
+            hole_pose = np.asarray(slots["hole_pose"][frame], dtype=np.float32).reshape(-1)[:7]
+            rel = np.asarray(slots["peg_head_at_hole"][frame], dtype=np.float32).reshape(-1)[:3]
+            grasped = bool(np.asarray(slots["grasped"][frame]).reshape(-1)[0]) if "grasped" in slots else None
+            inserted = bool(np.asarray(slots["inserted"][frame]).reshape(-1)[0]) if "inserted" in slots else None
+        else:
+            raise KeyError("terminal pose source_anchor currently requires traj_0/slots source H5")
+    features = pose_features_in_hole_frame(tcp_pose, peg_pose, hole_pose)
+    return {
+        "source_h5": str(source_h5),
+        "source_frame": frame,
+        "tcp_pose": tcp_pose.astype(float).tolist(),
+        "peg_pose": peg_pose.astype(float).tolist(),
+        "hole_pose": hole_pose.astype(float).tolist(),
+        "peg_head_at_hole": rel.astype(float).tolist(),
+        "grasped": grasped,
+        "inserted": inserted,
+        "features": features,
+    }
+
+
+def load_scripted_terminal_pose_anchor(source_h5: Path, args: argparse.Namespace) -> dict[str, Any] | None:
+    if str(args.scripted_insertion_terminal_pose_gate) == "disabled":
+        return None
+    return load_scripted_source_pose_anchor(
+        source_h5,
+        int(args.scripted_insertion_terminal_anchor_source_frame),
+    )
+
+
+def scripted_terminal_pose_gate(live: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    mode = str(getattr(args, "scripted_insertion_terminal_pose_gate", "disabled"))
+    if mode == "disabled":
+        return {
+            "mode": "disabled",
+            "ok": True,
+            "checks": {"disabled": True},
+            "boundary": "Terminal pose/contact gate disabled; rel-only scripted gate is in use.",
+        }
+    anchor = getattr(args, "scripted_insertion_terminal_pose_anchor", None)
+    if not isinstance(anchor, dict):
+        return {
+            "mode": mode,
+            "ok": False,
+            "checks": {"anchor_loaded": False},
+            "boundary": "Terminal pose/contact gate requires a loaded source anchor.",
+        }
+    live_features = pose_features_in_hole_frame(live["tcp_pose"], live["peg_pose"], live["hole_pose"])
+    anchor_features = anchor["features"]
+    rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    anchor_rel = np.asarray(anchor["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    live_peg_rot = np.asarray(live_features["peg_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+    anchor_peg_rot = np.asarray(anchor_features["peg_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+    live_hole_rot = quat_wxyz_to_matrix(np.asarray(live["hole_pose"], dtype=np.float32).reshape(-1)[3:7])
+    anchor_hole_rot = quat_wxyz_to_matrix(np.asarray(anchor["hole_pose"], dtype=np.float32).reshape(-1)[3:7])
+    metrics = {
+        "rel_l2": float(np.linalg.norm(rel - anchor_rel)),
+        "rel_delta": (rel - anchor_rel).astype(float).tolist(),
+        "peg_hole_pos_l2": float(
+            np.linalg.norm(
+                np.asarray(live_features["peg_pos_in_hole"], dtype=np.float32)
+                - np.asarray(anchor_features["peg_pos_in_hole"], dtype=np.float32)
+            )
+        ),
+        "tcp_hole_pos_l2": float(
+            np.linalg.norm(
+                np.asarray(live_features["tcp_pos_in_hole"], dtype=np.float32)
+                - np.asarray(anchor_features["tcp_pos_in_hole"], dtype=np.float32)
+            )
+        ),
+        "peg_hole_rot_rad": rotation_angle_rad(live_peg_rot @ anchor_peg_rot.T),
+        "hole_world_pos_l2": float(
+            np.linalg.norm(
+                np.asarray(live_features["hole_world_pos"], dtype=np.float32)
+                - np.asarray(anchor_features["hole_world_pos"], dtype=np.float32)
+            )
+        ),
+        "hole_world_rot_rad": rotation_angle_rad(live_hole_rot @ anchor_hole_rot.T),
+    }
+
+    def within(metric: str, threshold: float) -> bool:
+        return bool(float(threshold) < 0.0 or metrics[metric] <= float(threshold))
+
+    checks = {
+        "anchor_loaded": True,
+        "rel_l2": within("rel_l2", float(args.scripted_insertion_terminal_max_rel_l2)),
+        "peg_hole_pos_l2": within(
+            "peg_hole_pos_l2", float(args.scripted_insertion_terminal_max_peg_hole_pos_l2)
+        ),
+        "peg_hole_rot_rad": within(
+            "peg_hole_rot_rad", float(args.scripted_insertion_terminal_max_peg_hole_rot_rad)
+        ),
+        "tcp_hole_pos_l2": within(
+            "tcp_hole_pos_l2", float(args.scripted_insertion_terminal_max_tcp_hole_pos_l2)
+        ),
+        "hole_world_pos_l2": within(
+            "hole_world_pos_l2", float(args.scripted_insertion_terminal_max_hole_world_pos_l2)
+        ),
+        "hole_world_rot_rad": within(
+            "hole_world_rot_rad", float(args.scripted_insertion_terminal_max_hole_world_rot_rad)
+        ),
+    }
+    return {
+        "mode": mode,
+        "ok": bool(all(checks.values())),
+        "checks": checks,
+        "metrics": metrics,
+        "thresholds": {
+            "max_rel_l2": float(args.scripted_insertion_terminal_max_rel_l2),
+            "max_peg_hole_pos_l2": float(args.scripted_insertion_terminal_max_peg_hole_pos_l2),
+            "max_peg_hole_rot_rad": float(args.scripted_insertion_terminal_max_peg_hole_rot_rad),
+            "max_tcp_hole_pos_l2": float(args.scripted_insertion_terminal_max_tcp_hole_pos_l2),
+            "max_hole_world_pos_l2": float(args.scripted_insertion_terminal_max_hole_world_pos_l2),
+            "max_hole_world_rot_rad": float(args.scripted_insertion_terminal_max_hole_world_rot_rad),
+        },
+        "anchor": {
+            "source_h5": anchor["source_h5"],
+            "source_frame": int(anchor["source_frame"]),
+            "peg_head_at_hole": anchor["peg_head_at_hole"],
+            "grasped": anchor.get("grasped"),
+            "inserted": anchor.get("inserted"),
+        },
+        "live_features": live_features,
+        "boundary": (
+            "Automatic terminal pose/contact gate from live state only. It "
+            "compares the current live TCP/peg/hole pose to an offline source "
+            "anchor before scripted seating, preventing a rel-only near-hole "
+            "match from authorizing blind insertion."
+        ),
+    }
+
+
+def scripted_insertion_action_for_live(
+    *,
+    base_env: Any,
+    stack: dict[str, Any],
+    live: dict[str, Any],
+    args: argparse.Namespace,
+    local_step: int | None = None,
+    tail_action: np.ndarray | None = None,
+    contact_seat_latched: bool = False,
+    contact_seat_forced_reason: str | None = None,
+    contact_seat_disabled: bool = False,
+    contact_seat_x_direction_override: float | None = None,
+    adaptive_axis_multipliers: dict[str, float] | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    base_action = parse_scripted_insertion_action(args)
+    frame = str(getattr(args, "scripted_insertion_action_frame", "fixed"))
+    local_step_int = None if local_step is None else int(local_step)
+    if frame in {
+        "hole_frame_peg_pose_rot_then_teacher_table",
+        "hole_frame_peg_pose_rot_then_direct_target",
+    }:
+        switch_step = int(getattr(args, "scripted_insertion_compound_switch_step", 24))
+        if local_step_int is not None and local_step_int >= switch_step:
+            phase_frame = (
+                "hole_frame_direct_target_servo_keep_tail"
+                if frame == "hole_frame_peg_pose_rot_then_direct_target"
+                else "teacher_table_nearest_action"
+            )
+        else:
+            phase_frame = "hole_frame_peg_pose_rot_servo_keep_gripper"
+        phase_args = SimpleNamespace(**vars(args))
+        phase_args.scripted_insertion_action_frame = phase_frame
+        if frame == "hole_frame_peg_pose_rot_then_direct_target" and phase_frame == "hole_frame_direct_target_servo_keep_tail":
+            phase_args.scripted_insertion_max_lateral_step = 0.0
+        action, phase_record = scripted_insertion_action_for_live(
+            base_env=base_env,
+            stack=stack,
+            live=live,
+            args=phase_args,
+            local_step=local_step,
+            tail_action=tail_action,
+            contact_seat_latched=contact_seat_latched,
+            contact_seat_forced_reason=contact_seat_forced_reason,
+            contact_seat_disabled=contact_seat_disabled,
+            contact_seat_x_direction_override=contact_seat_x_direction_override,
+            adaptive_axis_multipliers=adaptive_axis_multipliers,
+        )
+        phase_record["compound_action_frame"] = frame
+        phase_record["compound_phase_frame"] = phase_frame
+        phase_record["compound_switch_step"] = switch_step
+        phase_record["boundary"] = (
+            "Compound automatic local finisher from live state only. It first "
+            "uses bounded source-anchor peg pose/rotation servo, then switches "
+            "to the configured live terminal phase. It does not set simulator "
+            "state or replay a saved suffix."
+        )
+        return action, phase_record
+    if frame == "fixed":
+        return base_action, {
+            "action_frame": "fixed",
+            "action_source": "requested_7d_template",
+            "requested_action": base_action.astype(float).tolist(),
+        }
+    if frame in {"teacher_table_nearest_action", "teacher_table_nearest_action_keep_tail"}:
+        return teacher_terminal_table_action_for_live(
+            live=live,
+            args=args,
+            tail_action=tail_action,
+        )
+
+    rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    lateral_gain = float(args.scripted_insertion_lateral_gain)
+    lateral_cap = abs(float(args.scripted_insertion_max_lateral_step))
+    lateral_sign = float(getattr(args, "scripted_insertion_lateral_sign", -1.0))
+    z_sign = float(getattr(args, "scripted_insertion_z_sign", -1.0))
+    axis_only_after = int(getattr(args, "scripted_insertion_axis_only_after_step", -1))
+    axis_only_active = axis_only_after >= 0 and local_step_int is not None and local_step_int >= axis_only_after
+    if frame == "world_frame_peg_head_servo_keep_tail":
+        target_anchor = getattr(args, "scripted_insertion_action_target_anchor", None)
+        if not isinstance(target_anchor, dict):
+            target_anchor = getattr(args, "scripted_insertion_terminal_pose_anchor", None)
+        direct_target_rel = scripted_insertion_action_target_rel(args)
+        target_rel_source = "source_anchor" if isinstance(target_anchor, dict) else "default_zero"
+        if isinstance(target_anchor, dict):
+            target_rel = np.asarray(target_anchor["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+        elif direct_target_rel is not None:
+            target_rel = direct_target_rel
+            target_rel_source = "scripted_insertion_action_target_rel"
+        else:
+            target_rel = np.zeros((3,), dtype=np.float32)
+        effective_target_rel = target_rel.copy()
+        lateral_error_l2 = float(np.linalg.norm((target_rel - rel)[1:3]))
+        lateral_only_threshold = float(getattr(args, "scripted_insertion_contact_seat_target_l2", -1.0))
+        lateral_only_active = bool(lateral_only_threshold >= 0.0 and lateral_error_l2 > lateral_only_threshold)
+        if lateral_only_active:
+            effective_target_rel[0] = float(rel[0])
+        common = stack["common"]
+        hole_mat = common.to_numpy(base_env.box_hole_pose.to_transformation_matrix())[0]
+        hole_rot = np.asarray(hole_mat[:3, :3], dtype=np.float32)
+        hole_pos = np.asarray(hole_mat[:3, 3], dtype=np.float32)
+        live_head_world = common.to_numpy(base_env.peg_head_pose.p)[0].astype(np.float32)
+        target_head_world = (hole_pos + hole_rot @ effective_target_rel).astype(np.float32)
+        error_world = (target_head_world - live_head_world).astype(np.float32)
+        gain = float(getattr(args, "scripted_insertion_action_target_gain", lateral_gain))
+        x_cap = abs(float(args.scripted_insertion_step_rel_x))
+        yz_cap = abs(float(args.scripted_insertion_max_lateral_step))
+        world_cap = np.asarray([x_cap, yz_cap, yz_cap], dtype=np.float32)
+        world_step = np.clip(gain * error_world, -world_cap, world_cap).astype(np.float32)
+        action = base_action.copy()
+        action[:3] = world_step
+        tail_source = "requested_action_template"
+        if tail_action is not None:
+            tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+            if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+                action[3:7] = tail[3:7]
+                tail_source = "most_recent_executed_action_tail"
+        return action, {
+            "action_frame": frame,
+            "action_source": "live_world_peg_head_error_to_tcp_delta_action",
+            "action_unit": (
+                "normalized_pd_ee_delta_pose_action; ManiSkill scales Panda xyz "
+                "components from [-1,1] to [-0.1m,0.1m]"
+            ),
+            "requested_action_template": base_action.astype(float).tolist(),
+            "peg_head_at_hole_before": rel.astype(float).tolist(),
+            "target_source_frame": int(target_anchor["source_frame"]) if isinstance(target_anchor, dict) else None,
+            "target_rel_source": target_rel_source,
+            "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+            "effective_target_peg_head_at_hole": effective_target_rel.astype(float).tolist(),
+            "lateral_error_l2": lateral_error_l2,
+            "lateral_only_threshold": lateral_only_threshold,
+            "lateral_only_active": bool(lateral_only_active),
+            "live_peg_head_world": live_head_world.astype(float).tolist(),
+            "target_peg_head_world": target_head_world.astype(float).tolist(),
+            "world_error_xyz": error_world.astype(float).tolist(),
+            "world_error_l2": float(np.linalg.norm(error_world)),
+            "world_step_xyz": world_step.astype(float).tolist(),
+            "preserved_rotation_gripper": action[3:].astype(float).tolist(),
+            "tail_source": tail_source,
+            "tail_action": None if tail_action is None else np.asarray(tail_action, dtype=np.float32).astype(float).tolist(),
+            "parameters": {
+                "target_gain": gain,
+                "x_cap_from_step_rel_x": x_cap,
+                "yz_cap_from_max_lateral_step": yz_cap,
+                "local_step": local_step_int,
+            },
+            "boundary": (
+                "Automatic world-frame peg-head servo from live state only. It "
+                "uses current live hole pose and current live peg-head world pose "
+                "to command bounded TCP delta actions; it does not set object "
+                "state, read future env_states, or use a hand-picked suffix. "
+                "When a direct scripted action target rel is supplied, it is a "
+                "fixed programmed terminal goal applied equally across live "
+                "episodes rather than a per-episode oracle frame. "
+                "When --scripted-insertion-contact-seat-target-l2 is nonnegative, "
+                "the servo first aligns lateral y/z in the live hole frame while "
+                "holding the current x target until the lateral threshold passes."
+            ),
+        }
+    if frame == "hole_frame_spiral_seat_keep_tail":
+        direct_target_rel = scripted_insertion_action_target_rel(args)
+        target_rel = direct_target_rel if direct_target_rel is not None else np.asarray([-0.006, 0.0, 0.0], dtype=np.float32)
+        x_cap = abs(float(args.scripted_insertion_step_rel_x))
+        yz_cap = abs(float(args.scripted_insertion_max_lateral_step))
+        spiral_x = abs(float(getattr(args, "scripted_insertion_spiral_step_rel_x", 0.02)))
+        spiral_x = min(spiral_x, x_cap)
+        x_direction = float(getattr(args, "scripted_insertion_spiral_x_direction", 1.0))
+        x_direction = 1.0 if x_direction >= 0.0 else -1.0
+        target_x_error = float(target_rel[0] - rel[0])
+        x_active = bool(target_x_error > 0.0)
+        x_step = x_direction * spiral_x if x_active else 0.0
+        period = max(1, int(getattr(args, "scripted_insertion_spiral_period", 8)))
+        phase = 2.0 * math.pi * float(0 if local_step_int is None else local_step_int) / float(period)
+        base_radius = max(0.0, float(getattr(args, "scripted_insertion_spiral_radius", 0.006)))
+        radius_growth = float(getattr(args, "scripted_insertion_spiral_radius_growth", 0.0))
+        radius = max(0.0, base_radius + max(0, 0 if local_step_int is None else local_step_int) * radius_growth)
+        center_gain = float(getattr(args, "scripted_insertion_spiral_center_gain", 2.0))
+        z_scale = float(getattr(args, "scripted_insertion_spiral_z_scale", 1.0))
+        center_y = lateral_sign * center_gain * float(rel[1])
+        center_z = z_sign * center_gain * float(rel[2])
+        dither_y = radius * math.sin(phase)
+        dither_z = z_scale * radius * math.cos(phase)
+        hole_step = np.asarray(
+            [
+                np.clip(x_step, -x_cap, x_cap),
+                np.clip(center_y + dither_y, -yz_cap, yz_cap),
+                np.clip(center_z + dither_z, -yz_cap, yz_cap),
+            ],
+            dtype=np.float32,
+        )
+        rot = hole_pose_rotation_world(base_env, stack)
+        world_step = (rot @ hole_step).astype(np.float32)
+        action = base_action.copy()
+        action[:3] = world_step
+        tail_source = "requested_action_template"
+        if tail_action is not None:
+            tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+            if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+                action[3:7] = tail[3:7]
+                tail_source = "most_recent_executed_action_tail"
+        return action, {
+            "action_frame": frame,
+            "action_source": "live_hole_frame_spiral_seating_action",
+            "action_unit": (
+                "normalized_pd_ee_delta_pose_action; ManiSkill scales Panda xyz "
+                "components from [-1,1] to [-0.1m,0.1m]"
+            ),
+            "requested_action_template": base_action.astype(float).tolist(),
+            "peg_head_at_hole_before": rel.astype(float).tolist(),
+            "target_rel_source": (
+                "scripted_insertion_action_target_rel"
+                if direct_target_rel is not None
+                else "default_spiral_seat_target_rel"
+            ),
+            "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+            "target_x_error": target_x_error,
+            "x_active": bool(x_active),
+            "hole_frame_action_xyz": hole_step.astype(float).tolist(),
+            "hole_frame_step_xyz": hole_step.astype(float).tolist(),
+            "hole_rotation_world": rot.astype(float).tolist(),
+            "world_action_xyz": world_step.astype(float).tolist(),
+            "world_step_xyz": world_step.astype(float).tolist(),
+            "preserved_rotation_gripper": action[3:].astype(float).tolist(),
+            "tail_source": tail_source,
+            "tail_action": (
+                None
+                if tail_action is None
+                else np.asarray(tail_action, dtype=np.float32).astype(float).tolist()
+            ),
+            "parameters": {
+                "local_step": local_step_int,
+                "x_cap_from_step_rel_x": x_cap,
+                "yz_cap_from_max_lateral_step": yz_cap,
+                "spiral_step_rel_x": spiral_x,
+                "spiral_x_direction": x_direction,
+                "spiral_radius": radius,
+                "spiral_radius_base": base_radius,
+                "spiral_radius_growth": radius_growth,
+                "spiral_period": period,
+                "spiral_phase_rad": phase,
+                "spiral_center_gain": center_gain,
+                "spiral_z_scale": z_scale,
+                "center_y": center_y,
+                "center_z": center_z,
+                "dither_y": dither_y,
+                "dither_z": dither_z,
+            },
+            "boundary": (
+                "Automatic local spiral seating primitive from live state only. "
+                "It commands a bounded hole-axis push plus programmed y/z "
+                "dither and live y/z centering in pd_ee_delta_pose; it does "
+                "not set object state, replay a suffix, query future labels, "
+                "or require per-episode human choices."
+            ),
+        }
+    if frame in {
+        "hole_frame_direct_target_servo_keep_tail",
+        "hole_frame_anchor_servo",
+        "hole_frame_anchor_servo_keep_tail",
+        "hole_frame_adaptive_anchor_servo_keep_tail",
+        "hole_frame_peg_pose_servo",
+        "hole_frame_peg_pose_servo_keep_tail",
+        "hole_frame_peg_pose_rot_servo_keep_gripper",
+    }:
+        target_anchor = getattr(args, "scripted_insertion_action_target_anchor", None)
+        if not isinstance(target_anchor, dict):
+            target_anchor = getattr(args, "scripted_insertion_terminal_pose_anchor", None)
+        direct_target_rel = scripted_insertion_action_target_rel(args)
+        if frame == "hole_frame_direct_target_servo_keep_tail":
+            target_rel = (
+                direct_target_rel if direct_target_rel is not None else np.zeros((3,), dtype=np.float32)
+            )
+            rel_error = target_rel - rel
+            effective_rel_error = rel_error.copy()
+            lateral_error_l2 = float(np.linalg.norm(rel_error[1:3]))
+            lateral_only_threshold = float(getattr(args, "scripted_insertion_contact_seat_target_l2", -1.0))
+            lateral_only_active = bool(lateral_only_threshold >= 0.0 and lateral_error_l2 > lateral_only_threshold)
+            if lateral_only_active:
+                effective_rel_error[0] = 0.0
+            target_gain = float(getattr(args, "scripted_insertion_action_target_gain", lateral_gain))
+            x_cap = abs(float(args.scripted_insertion_step_rel_x))
+            multipliers = adaptive_axis_multipliers or {}
+
+            def _direct_component(axis: str, axis_i: int, cap: float) -> float:
+                if axis_only_active and axis_i > 0:
+                    return 0.0
+                raw_step = float(np.clip(target_gain * float(effective_rel_error[axis_i]), -cap, cap))
+                multiplier = float(multipliers.get(axis, 1.0))
+                multiplier = 1.0 if multiplier >= 0.0 else -1.0
+                return float(np.clip(multiplier * raw_step, -cap, cap))
+
+            hole_step = np.asarray(
+                [
+                    _direct_component("x", 0, x_cap),
+                    _direct_component("y", 1, lateral_cap),
+                    _direct_component("z", 2, lateral_cap),
+                ],
+                dtype=np.float32,
+            )
+            rot = hole_pose_rotation_world(base_env, stack)
+            world_step = (rot @ hole_step).astype(np.float32)
+            action = base_action.copy()
+            action[:3] = world_step
+            tail_source = "requested_action_template"
+            if tail_action is not None:
+                tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+                if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+                    action[3:7] = tail[3:7]
+                    tail_source = "most_recent_executed_action_tail"
+            target_error_l2 = float(np.linalg.norm(rel_error))
+            return action, {
+                "action_frame": frame,
+                "action_source": "direct_target_rel_error_converted_to_world_xyz",
+                "action_unit": (
+                    "normalized_pd_ee_delta_pose_action; ManiSkill scales Panda xyz "
+                    "components from [-1,1] to [-0.1m,0.1m]"
+                ),
+                "requested_action_template": base_action.astype(float).tolist(),
+                "peg_head_at_hole_before": rel.astype(float).tolist(),
+                "target_rel_source": (
+                    "scripted_insertion_action_target_rel"
+                    if direct_target_rel is not None
+                    else "default_zero"
+                ),
+                "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+                "target_error_rel": rel_error.astype(float).tolist(),
+                "effective_target_error_rel": effective_rel_error.astype(float).tolist(),
+                "servo_error_xyz": effective_rel_error.astype(float).tolist(),
+                "servo_error_l2": target_error_l2,
+                "lateral_error_l2": lateral_error_l2,
+                "lateral_only_threshold": lateral_only_threshold,
+                "lateral_only_active": bool(lateral_only_active),
+                "hole_frame_action_xyz": hole_step.astype(float).tolist(),
+                "hole_frame_step_xyz": hole_step.astype(float).tolist(),
+                "hole_rotation_world": rot.astype(float).tolist(),
+                "world_action_xyz": world_step.astype(float).tolist(),
+                "world_step_xyz": world_step.astype(float).tolist(),
+                "preserved_rotation_gripper": action[3:].astype(float).tolist(),
+                "tail_source": tail_source,
+                "tail_action": (
+                    None
+                    if tail_action is None
+                    else np.asarray(tail_action, dtype=np.float32).astype(float).tolist()
+                ),
+                "parameters": {
+                    "target_gain": target_gain,
+                    "x_cap_from_step_rel_x": x_cap,
+                    "max_lateral_step": lateral_cap,
+                    "axis_only_after_step": axis_only_after,
+                    "axis_only_active": bool(axis_only_active),
+                    "local_step": local_step_int,
+                    "adaptive_axis_multipliers": (
+                        {str(k): float(v) for k, v in adaptive_axis_multipliers.items()}
+                        if adaptive_axis_multipliers is not None
+                        else None
+                    ),
+                },
+                "boundary": (
+                    "Anchor-free automatic local finisher from live "
+                    "peg_head_at_hole only. It drives toward one fixed "
+                    "programmed hole-frame target rel with bounded "
+                    "pd_ee_delta_pose actions and optional automatic per-axis "
+                    "sign flips when live error regresses. It does not set "
+                    "object state, replay a source suffix, or read future labels."
+                ),
+            }
+        if not isinstance(target_anchor, dict):
+            raise RuntimeError(
+                f"{frame} requires --scripted-insertion-action-target-source-frame "
+                "or an enabled terminal pose source anchor"
+            )
+        target_rel = np.asarray(target_anchor["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+        live_features = pose_features_in_hole_frame(live["tcp_pose"], live["peg_pose"], live["hole_pose"])
+        target_features = target_anchor["features"]
+        live_peg_pos_in_hole = np.asarray(live_features["peg_pos_in_hole"], dtype=np.float32).reshape(-1)[:3]
+        target_peg_pos_in_hole = np.asarray(target_features["peg_pos_in_hole"], dtype=np.float32).reshape(-1)[:3]
+        rel_error = target_rel - rel
+        peg_pose_error = target_peg_pos_in_hole - live_peg_pos_in_hole
+        uses_peg_pose_position = frame.startswith("hole_frame_peg_pose_servo") or frame.startswith(
+            "hole_frame_peg_pose_rot_servo"
+        )
+        error = peg_pose_error if uses_peg_pose_position else rel_error
+        target_gain = float(getattr(args, "scripted_insertion_action_target_gain", lateral_gain))
+        x_cap = abs(float(args.scripted_insertion_step_rel_x))
+        contact_seat_threshold = float(getattr(args, "scripted_insertion_contact_seat_target_l2", -1.0))
+        target_error_l2 = float(np.linalg.norm(error))
+        contact_seat_threshold_passed = bool(
+            contact_seat_threshold >= 0.0 and target_error_l2 <= contact_seat_threshold
+        )
+        contact_seat_forced = bool(contact_seat_forced_reason)
+        contact_seat_active = bool(
+            not bool(contact_seat_disabled)
+            and (contact_seat_latched or contact_seat_threshold_passed or contact_seat_forced)
+        )
+        contact_seat_x_servo_record: dict[str, Any] | None = None
+        if frame == "hole_frame_adaptive_anchor_servo_keep_tail":
+            align_threshold = contact_seat_threshold if contact_seat_threshold >= 0.0 else 0.008
+            prealign_max_steps = int(getattr(args, "scripted_insertion_contact_seat_max_servo_steps", -1))
+            lateral_error_l2 = float(np.linalg.norm(rel_error[1:3]))
+            x_enabled = bool(
+                lateral_error_l2 <= max(0.0, align_threshold)
+                or (prealign_max_steps >= 0 and local_step_int is not None and local_step_int >= prealign_max_steps)
+            )
+            multipliers = adaptive_axis_multipliers or {}
+            min_x_step = max(
+                0.0,
+                float(getattr(args, "scripted_insertion_contact_seat_min_step_rel_x", 0.0)),
+            )
+            prealign_x_step = min(x_cap, min_x_step if min_x_step > 0.0 else min(0.04, x_cap))
+            prealign_x_multiplier = float(multipliers.get("x", 1.0))
+            prealign_x_multiplier = 1.0 if prealign_x_multiplier >= 0.0 else -1.0
+
+            def _adaptive_component(axis: str, axis_error: float, cap: float) -> float:
+                if abs(float(axis_error)) < 1e-9 or cap <= 0.0:
+                    return 0.0
+                multiplier = float(multipliers.get(axis, 1.0))
+                multiplier = 1.0 if multiplier >= 0.0 else -1.0
+                signed_unit = 1.0 if float(axis_error) >= 0.0 else -1.0
+                return float(np.clip(multiplier * signed_unit * target_gain * abs(float(axis_error)), -cap, cap))
+
+            hole_step = np.asarray(
+                [
+                    (
+                        _adaptive_component("x", float(rel_error[0]), x_cap)
+                        if x_enabled
+                        else prealign_x_multiplier * prealign_x_step
+                    ),
+                    0.0 if axis_only_active else _adaptive_component("y", float(rel_error[1]), lateral_cap),
+                    0.0 if axis_only_active else _adaptive_component("z", float(rel_error[2]), lateral_cap),
+                ],
+                dtype=np.float32,
+            )
+            contact_seat_x_servo_record = {
+                "enabled": False,
+                "adaptive_anchor_prealign": True,
+                "lateral_error_l2": lateral_error_l2,
+                "align_threshold": align_threshold,
+                "prealign_max_steps": prealign_max_steps,
+                "x_enabled": bool(x_enabled),
+                "prealign_x_step": float(prealign_x_step),
+                "prealign_x_multiplier": float(prealign_x_multiplier),
+                "axis_multipliers": {str(k): float(v) for k, v in multipliers.items()},
+                "boundary": (
+                    "Adaptive automatic local finisher from live peg_head_at_hole only. "
+                    "It keeps a bounded positive hole-axis insertion step active "
+                    "while applying conservative y/z correction; optional "
+                    "action-axis sign flips are disabled unless explicitly requested."
+                ),
+            }
+        elif contact_seat_active:
+            fixed_seat_x = float(getattr(args, "scripted_insertion_contact_seat_step_rel_x", 0.06))
+            seat_x = np.clip(fixed_seat_x, -x_cap, x_cap)
+            if bool(getattr(args, "scripted_insertion_contact_seat_x_servo", False)):
+                target_rel_x = float(getattr(args, "scripted_insertion_contact_seat_target_rel_x", 0.0))
+                rel_x_error = target_rel_x - float(rel[0])
+                x_gain = float(getattr(args, "scripted_insertion_contact_seat_x_servo_gain", 8.0))
+                x_direction = float(getattr(args, "scripted_insertion_contact_seat_x_servo_direction", 1.0))
+                if contact_seat_x_direction_override is not None:
+                    x_direction = float(contact_seat_x_direction_override)
+                x_direction = 1.0 if x_direction >= 0.0 else -1.0
+                min_step = max(0.0, float(getattr(args, "scripted_insertion_contact_seat_min_step_rel_x", 0.0)))
+                x_servo_cap = float(getattr(args, "scripted_insertion_contact_seat_max_step_rel_x", -1.0))
+                if x_servo_cap < 0.0:
+                    x_servo_cap = x_cap
+                else:
+                    x_servo_cap = min(abs(x_servo_cap), x_cap)
+                if rel_x_error > 0.0:
+                    servo_x = float(np.clip(x_gain * rel_x_error, 0.0, x_servo_cap))
+                    if min_step > 0.0:
+                        servo_x = min(x_servo_cap, max(min_step, servo_x))
+                    seat_x = float(np.clip(x_direction * servo_x, -x_cap, x_cap))
+                else:
+                    seat_x = 0.0
+                contact_seat_x_servo_record = {
+                    "enabled": True,
+                    "target_rel_x": target_rel_x,
+                    "rel_x_before": float(rel[0]),
+                    "rel_x_error": rel_x_error,
+                    "gain": x_gain,
+                    "direction_for_positive_error": x_direction,
+                    "fixed_step_fallback": fixed_seat_x,
+                    "min_step_rel_x": min_step,
+                    "max_step_rel_x": x_servo_cap,
+                    "x_cap": x_cap,
+                    "computed_seat_x": seat_x,
+                    "boundary": (
+                        "Closed-loop contact-seat x command from current live "
+                        "peg_head_at_hole only. It does not use future labels "
+                        "or hand-picked suffixes."
+                    ),
+                }
+            seat_gain = float(getattr(args, "scripted_insertion_contact_seat_lateral_gain", 0.0))
+            seat_cap = abs(float(getattr(args, "scripted_insertion_contact_seat_max_lateral_step", 0.02)))
+            hole_step = np.asarray(
+                [
+                    seat_x,
+                    0.0 if axis_only_active else np.clip(lateral_sign * seat_gain * float(rel[1]), -seat_cap, seat_cap),
+                    0.0 if axis_only_active else np.clip(z_sign * seat_gain * float(rel[2]), -seat_cap, seat_cap),
+                ],
+                dtype=np.float32,
+            )
+        else:
+            hole_step = np.asarray(
+                [
+                    np.clip(target_gain * float(error[0]), -x_cap, x_cap),
+                    0.0 if axis_only_active else np.clip(target_gain * float(error[1]), -lateral_cap, lateral_cap),
+                    0.0 if axis_only_active else np.clip(target_gain * float(error[2]), -lateral_cap, lateral_cap),
+                ],
+                dtype=np.float32,
+            )
+        rot = hole_pose_rotation_world(base_env, stack)
+        world_step = (rot @ hole_step).astype(np.float32)
+        action = base_action.copy()
+        action[:3] = world_step
+        tail_source = "requested_action_template"
+        rot_servo_record: dict[str, Any] | None = None
+        if frame in {
+            "hole_frame_anchor_servo_keep_tail",
+            "hole_frame_adaptive_anchor_servo_keep_tail",
+            "hole_frame_peg_pose_servo_keep_tail",
+        } and tail_action is not None:
+            tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+            if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+                action[3:7] = tail[3:7]
+                tail_source = "most_recent_executed_action_tail"
+        if frame == "hole_frame_peg_pose_rot_servo_keep_gripper":
+            rot_source = str(getattr(args, "scripted_insertion_action_target_rot_source", "peg"))
+            live_rot_in_hole = np.asarray(live_features[f"{rot_source}_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+            target_rot_in_hole = np.asarray(target_features[f"{rot_source}_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+            rot_delta_hole = target_rot_in_hole @ live_rot_in_hole.T
+            rot_error_hole = rotation_vector_from_matrix(rot_delta_hole)
+            rot_error_world = (rot @ rot_error_hole).astype(np.float32)
+            rot_gain = float(getattr(args, "scripted_insertion_action_target_rot_gain", 3.0))
+            rot_cap = abs(float(getattr(args, "scripted_insertion_action_target_rot_cap", 0.35)))
+            rot_action = np.clip(rot_gain * rot_error_world, -rot_cap, rot_cap).astype(np.float32)
+            if contact_seat_active:
+                rot_action = base_action[3:6].astype(np.float32)
+                if tail_action is not None:
+                    tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+                    if tail.shape[0] >= 6 and np.isfinite(tail[3:6]).all():
+                        rot_action = tail[3:6].astype(np.float32)
+                action[3:6] = rot_action
+            else:
+                action[3:6] = rot_action
+            gripper_source = "requested_action_template"
+            if tail_action is not None:
+                tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+                if tail.shape[0] >= 7 and np.isfinite(tail[6]):
+                    action[6] = tail[6]
+                    gripper_source = "most_recent_executed_action_gripper"
+            tail_source = (
+                f"contact_seat_preserved_rotation_with_{gripper_source}"
+                if contact_seat_active
+                else f"target_{rot_source}_rotation_servo_with_{gripper_source}"
+            )
+            rot_servo_record = {
+                "rot_source": rot_source,
+                "live_rot_in_hole": live_rot_in_hole.astype(float).tolist(),
+                "target_rot_in_hole": target_rot_in_hole.astype(float).tolist(),
+                "rot_delta_hole": rot_delta_hole.astype(float).tolist(),
+                "rot_error_hole_rotvec": rot_error_hole.astype(float).tolist(),
+                "rot_error_world_rotvec": rot_error_world.astype(float).tolist(),
+                "rot_error_angle_rad": rotation_angle_rad(rot_delta_hole),
+                "rot_action_tail": rot_action.astype(float).tolist(),
+                "rot_gain": rot_gain,
+                "rot_cap": rot_cap,
+                "gripper_source": gripper_source,
+                "contact_seat_active": bool(contact_seat_active),
+            }
+        return action, {
+            "action_frame": frame,
+            "action_source": (
+                "target_anchor_peg_pose_and_rotation_error_converted_to_world_action"
+                if frame == "hole_frame_peg_pose_rot_servo_keep_gripper"
+                else "adaptive_target_anchor_rel_error_converted_to_world_xyz"
+                if frame == "hole_frame_adaptive_anchor_servo_keep_tail"
+                else "target_anchor_rel_error_converted_to_world_xyz"
+            ),
+            "action_unit": (
+                "normalized_pd_ee_delta_pose_action; ManiSkill scales Panda xyz "
+                "components from [-1,1] to [-0.1m,0.1m]"
+            ),
+            "requested_action_template": base_action.astype(float).tolist(),
+            "peg_head_at_hole_before": rel.astype(float).tolist(),
+            "target_source_frame": int(target_anchor["source_frame"]),
+            "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+            "target_error_rel": rel_error.astype(float).tolist(),
+            "live_peg_pos_in_hole": live_peg_pos_in_hole.astype(float).tolist(),
+            "target_peg_pos_in_hole": target_peg_pos_in_hole.astype(float).tolist(),
+            "target_error_peg_pos_in_hole": peg_pose_error.astype(float).tolist(),
+            "servo_error_source": "peg_pos_in_hole" if uses_peg_pose_position else "peg_head_at_hole",
+            "servo_error_xyz": error.astype(float).tolist(),
+            "servo_error_l2": target_error_l2,
+            "contact_seat": {
+                "active": bool(contact_seat_active),
+                "disabled": bool(contact_seat_disabled),
+                "threshold_passed": bool(contact_seat_threshold_passed),
+                "forced": bool(contact_seat_forced),
+                "forced_reason": contact_seat_forced_reason,
+                "latched_before_step": bool(contact_seat_latched),
+                "latch_enabled": bool(getattr(args, "scripted_insertion_contact_seat_latch", False)),
+                "target_l2_threshold": contact_seat_threshold,
+                "seat_step_rel_x": float(getattr(args, "scripted_insertion_contact_seat_step_rel_x", 0.06)),
+                "x_servo": contact_seat_x_servo_record
+                if contact_seat_x_servo_record is not None
+                else {
+                    "enabled": bool(getattr(args, "scripted_insertion_contact_seat_x_servo", False)),
+                    "target_rel_x": float(getattr(args, "scripted_insertion_contact_seat_target_rel_x", 0.0)),
+                    "gain": float(getattr(args, "scripted_insertion_contact_seat_x_servo_gain", 8.0)),
+                    "direction_for_positive_error": float(
+                        getattr(args, "scripted_insertion_contact_seat_x_servo_direction", 1.0)
+                    ),
+                    "min_step_rel_x": float(getattr(args, "scripted_insertion_contact_seat_min_step_rel_x", 0.0)),
+                    "max_step_rel_x": float(getattr(args, "scripted_insertion_contact_seat_max_step_rel_x", -1.0)),
+                },
+                "seat_lateral_gain": float(getattr(args, "scripted_insertion_contact_seat_lateral_gain", 0.0)),
+                "seat_max_lateral_step": float(
+                    getattr(args, "scripted_insertion_contact_seat_max_lateral_step", 0.02)
+                ),
+                "boundary": (
+                    "Automatic contact-seat phase from live state only. It is "
+                    "enabled only after a programmed target-distance, servo-step, "
+                    "or plateau trigger passes and then uses bounded local "
+                    "seating actions, not future labels or human-selected frames."
+                ),
+            },
+            "rotation_servo": rot_servo_record,
+            "hole_frame_action_xyz": hole_step.astype(float).tolist(),
+            "hole_frame_step_xyz": hole_step.astype(float).tolist(),
+            "hole_rotation_world": rot.astype(float).tolist(),
+            "world_action_xyz": world_step.astype(float).tolist(),
+            "world_step_xyz": world_step.astype(float).tolist(),
+            "preserved_rotation_gripper": action[3:].astype(float).tolist(),
+            "tail_source": tail_source,
+            "tail_action": None if tail_action is None else np.asarray(tail_action, dtype=np.float32).astype(float).tolist(),
+            "parameters": {
+                "target_gain": target_gain,
+                "target_rot_gain": float(getattr(args, "scripted_insertion_action_target_rot_gain", 3.0)),
+                "target_rot_cap": float(getattr(args, "scripted_insertion_action_target_rot_cap", 0.35)),
+                "target_rot_source": str(getattr(args, "scripted_insertion_action_target_rot_source", "peg")),
+                "contact_seat_target_l2": contact_seat_threshold,
+                "x_cap_from_step_rel_x": x_cap,
+                "max_lateral_step": lateral_cap,
+                "axis_only_after_step": axis_only_after,
+                "axis_only_active": bool(axis_only_active),
+                "local_step": local_step_int,
+                "adaptive_axis_multipliers": (
+                    {str(k): float(v) for k, v in adaptive_axis_multipliers.items()}
+                    if adaptive_axis_multipliers is not None
+                    else None
+                ),
+            },
+        }
+    lateral_y = 0.0 if axis_only_active else np.clip(lateral_sign * lateral_gain * float(rel[1]), -lateral_cap, lateral_cap)
+    lateral_z = 0.0 if axis_only_active else np.clip(z_sign * lateral_gain * float(rel[2]), -lateral_cap, lateral_cap)
+    hole_step = np.asarray(
+        [
+            float(args.scripted_insertion_step_rel_x),
+            lateral_y,
+            lateral_z,
+        ],
+        dtype=np.float32,
+    )
+    rot = hole_pose_rotation_world(base_env, stack)
+    world_step = (rot @ hole_step).astype(np.float32)
+    action = base_action.copy()
+    action[:3] = world_step
+    tail_source = "requested_action_template"
+    if frame == "hole_frame_servo_keep_tail" and tail_action is not None:
+        tail = np.asarray(tail_action, dtype=np.float32).reshape(-1)
+        if tail.shape[0] >= 7 and np.isfinite(tail[3:7]).all():
+            action[3:7] = tail[3:7]
+            tail_source = "most_recent_executed_action_tail"
+    return action, {
+        "action_frame": frame,
+        "action_source": "normalized_hole_frame_action_converted_to_world_xyz",
+        "action_unit": (
+            "normalized_pd_ee_delta_pose_action; ManiSkill scales Panda xyz "
+            "components from [-1,1] to [-0.1m,0.1m]"
+        ),
+        "requested_action_template": base_action.astype(float).tolist(),
+        "peg_head_at_hole_before": rel.astype(float).tolist(),
+        "hole_frame_action_xyz": hole_step.astype(float).tolist(),
+        "hole_frame_step_xyz": hole_step.astype(float).tolist(),
+        "hole_rotation_world": rot.astype(float).tolist(),
+        "world_action_xyz": world_step.astype(float).tolist(),
+        "world_step_xyz": world_step.astype(float).tolist(),
+        "preserved_rotation_gripper": action[3:].astype(float).tolist(),
+        "tail_source": tail_source,
+        "tail_action": None if tail_action is None else np.asarray(tail_action, dtype=np.float32).astype(float).tolist(),
+        "parameters": {
+            "step_rel_x": float(args.scripted_insertion_step_rel_x),
+            "lateral_gain": float(args.scripted_insertion_lateral_gain),
+            "max_lateral_step": float(args.scripted_insertion_max_lateral_step),
+            "lateral_sign": lateral_sign,
+            "z_sign": z_sign,
+            "axis_only_after_step": axis_only_after,
+            "axis_only_active": bool(axis_only_active),
+            "local_step": local_step_int,
+        },
+    }
+
+
+def scripted_insertion_action_target_error(live: dict[str, Any], args: argparse.Namespace) -> dict[str, Any] | None:
+    target_anchor = getattr(args, "scripted_insertion_action_target_anchor", None)
+    if not isinstance(target_anchor, dict):
+        return None
+    rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    target_rel = np.asarray(target_anchor["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    rel_error = target_rel - rel
+    live_features = pose_features_in_hole_frame(live["tcp_pose"], live["peg_pose"], live["hole_pose"])
+    target_features = target_anchor["features"]
+    live_peg_pos_in_hole = np.asarray(live_features["peg_pos_in_hole"], dtype=np.float32).reshape(-1)[:3]
+    target_peg_pos_in_hole = np.asarray(target_features["peg_pos_in_hole"], dtype=np.float32).reshape(-1)[:3]
+    peg_pose_error = target_peg_pos_in_hole - live_peg_pos_in_hole
+    action_frame = str(getattr(args, "scripted_insertion_action_frame", "fixed"))
+    uses_peg_pose_position = action_frame.startswith("hole_frame_peg_pose_servo") or action_frame.startswith(
+        "hole_frame_peg_pose_rot_servo"
+    )
+    primary_error = peg_pose_error if uses_peg_pose_position else rel_error
+    rot_source = str(getattr(args, "scripted_insertion_action_target_rot_source", "peg"))
+    live_rot_in_hole = np.asarray(live_features[f"{rot_source}_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+    target_rot_in_hole = np.asarray(target_features[f"{rot_source}_rot_in_hole"], dtype=np.float32).reshape(3, 3)
+    rot_delta_hole = target_rot_in_hole @ live_rot_in_hole.T
+    return {
+        "target_source_frame": int(target_anchor["source_frame"]),
+        "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+        "live_peg_head_at_hole": rel.astype(float).tolist(),
+        "target_error_rel": rel_error.astype(float).tolist(),
+        "target_error_rel_l2": float(np.linalg.norm(rel_error)),
+        "target_peg_pos_in_hole": target_peg_pos_in_hole.astype(float).tolist(),
+        "live_peg_pos_in_hole": live_peg_pos_in_hole.astype(float).tolist(),
+        "target_error_peg_pos_in_hole": peg_pose_error.astype(float).tolist(),
+        "target_error_peg_pos_l2": float(np.linalg.norm(peg_pose_error)),
+        "target_error_rot_source": rot_source,
+        "target_error_rot_rad": rotation_angle_rad(rot_delta_hole),
+        "target_error_rotvec_hole": rotation_vector_from_matrix(rot_delta_hole).astype(float).tolist(),
+        "primary_error_source": "peg_pos_in_hole" if uses_peg_pose_position else "peg_head_at_hole",
+        "target_error_l2": float(np.linalg.norm(primary_error)),
+    }
+
+
+def scripted_contact_seat_force_reason(
+    *,
+    args: argparse.Namespace,
+    local_step: int,
+    last_anchor_target_error: dict[str, Any] | None,
+    steps_since_anchor_improvement: int,
+) -> str | None:
+    if last_anchor_target_error is None:
+        return None
+    current_l2 = float(last_anchor_target_error["target_error_l2"])
+
+    max_servo_steps = int(getattr(args, "scripted_insertion_contact_seat_max_servo_steps", -1))
+    if max_servo_steps >= 0 and int(local_step) >= max_servo_steps:
+        return "max_servo_steps"
+
+    min_servo_steps = int(getattr(args, "scripted_insertion_contact_seat_min_servo_steps", -1))
+    max_servo_l2 = float(getattr(args, "scripted_insertion_contact_seat_max_servo_l2", -1.0))
+    if min_servo_steps >= 0 and max_servo_l2 >= 0.0:
+        if int(local_step) >= min_servo_steps and current_l2 <= max_servo_l2:
+            return "min_servo_steps_and_l2"
+
+    plateau_window = int(getattr(args, "scripted_insertion_contact_seat_plateau_window", 0))
+    plateau_max_l2 = float(getattr(args, "scripted_insertion_contact_seat_plateau_max_l2", -1.0))
+    if plateau_window > 0 and int(steps_since_anchor_improvement) >= plateau_window:
+        if plateau_max_l2 < 0.0 or current_l2 <= plateau_max_l2:
+            return "target_error_plateau"
+
+    return None
+
+
+def scripted_step_gate_allows_continue(step_gate: dict[str, Any], args: argparse.Namespace) -> tuple[bool, str]:
+    if bool(step_gate.get("ok", False)):
+        return True, "gate_ok"
+    if not bool(getattr(args, "scripted_insertion_ignore_grasp_after_trigger", False)):
+        return False, "gate_false"
+    checks = dict(step_gate.get("checks") or {})
+    if not checks:
+        return False, "gate_false_no_checks"
+    failing = sorted(str(k) for k, v in checks.items() if not bool(v))
+    if failing == ["grasped"]:
+        return True, "grasp_false_ignored_after_trigger"
+    return False, "gate_false_" + ",".join(failing)
+
+
+def scripted_insertion_gate(
+    live: dict[str, Any],
+    history: np.ndarray,
+    prefix_frame: int,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+    hole_speed = latest_hole_speed(history, prefix_frame)
+    live_grasped = bool(live.get("grasped", False))
+    terminal_pose = scripted_terminal_pose_gate(live, args)
+    checks = {
+        "enabled": str(args.scripted_insertion_mode) != "disabled",
+        "grasped": (not bool(args.scripted_insertion_require_grasp)) or live_grasped,
+        "not_inserted": not bool(live.get("inserted", False)),
+        "rel_x_min": bool(rel[0] >= float(args.scripted_insertion_min_rel_x)),
+        "rel_x_max": bool(rel[0] <= float(args.scripted_insertion_max_rel_x)),
+        "rel_y_abs": bool(abs(float(rel[1])) <= float(args.scripted_insertion_max_abs_y)),
+        "rel_z_abs": bool(abs(float(rel[2])) <= float(args.scripted_insertion_max_abs_z)),
+        "hole_speed": bool(hole_speed <= float(args.scripted_insertion_max_hole_speed)),
+        "terminal_pose": bool(terminal_pose.get("ok", False)),
+        "action_budget": bool(prefix_frame < int(args.expected_action_steps)),
+        "max_steps_positive": bool(int(args.scripted_insertion_max_steps) > 0),
+    }
+    return {
+        "boundary": (
+            "Automatic scripted insertion gate from real live state only. It "
+            "allows a bounded local primitive only when the peg head is already "
+            "near the current hole frame and the target is not moving too fast. "
+            "It is not human intervention and not success evidence by itself; "
+            "final live simulator state and video remain authoritative."
+        ),
+        "ok": bool(all(checks.values())),
+        "mode": str(args.scripted_insertion_mode),
+        "live_grasped": live_grasped,
+        "live_inserted": bool(live.get("inserted", False)),
+        "checks": checks,
+        "terminal_pose_gate": terminal_pose,
+        "peg_head_at_hole": rel.astype(float).tolist(),
+        "hole_speed": hole_speed,
+        "thresholds": {
+            "min_rel_x": float(args.scripted_insertion_min_rel_x),
+            "max_rel_x": float(args.scripted_insertion_max_rel_x),
+            "max_abs_y": float(args.scripted_insertion_max_abs_y),
+            "max_abs_z": float(args.scripted_insertion_max_abs_z),
+            "max_hole_speed": float(args.scripted_insertion_max_hole_speed),
+            "require_grasp": bool(args.scripted_insertion_require_grasp),
+        },
+    }
+
+
+def execute_scripted_insertion_primitive(
+    *,
+    env: Any,
+    base_env: Any,
+    stack: dict[str, Any],
+    env_states: list[Any],
+    args: argparse.Namespace,
+    low: np.ndarray,
+    high: np.ndarray,
+    history: np.ndarray,
+    dp_obs_history: list[np.ndarray],
+    observed_frames: list[Any],
+    previous_hole_xyz: np.ndarray,
+    prefix_frame: int,
+) -> tuple[int, np.ndarray, dict[str, Any], dict[str, Any]]:
+    action = parse_scripted_insertion_action(args)
+    gate_before = scripted_insertion_gate(live_pose_row(base_env, stack, previous_hole_xyz), history, prefix_frame, args)
+    record: dict[str, Any] = {
+        "scripted_insertion_controller_step_type": "scripted_insertion_primitive",
+        "scripted_insertion_mode": str(args.scripted_insertion_mode),
+        "scripted_insertion_action_frame": str(args.scripted_insertion_action_frame),
+        "scripted_insertion_action_requested": action.astype(float).tolist(),
+        "scripted_insertion_max_steps": int(args.scripted_insertion_max_steps),
+        "scripted_insertion_stop_on_gate_fail": bool(args.scripted_insertion_stop_on_gate_fail),
+        "scripted_insertion_gate_before": gate_before,
+        "scripted_insertion_steps": [],
+        "boundary": (
+            "Bounded automatic local finisher. The fixed 7D action template is "
+            "executed only after a programmed live-state near-hole gate passes. "
+            "No human per-episode intervention, future labels, or hand-picked "
+            "takeover frames are used."
+        ),
+    }
+    if not bool(gate_before.get("ok", False)):
+        record["scripted_insertion_executed"] = False
+        record["scripted_insertion_stop_reason"] = "initial_gate_false"
+        live_after = live_pose_row(base_env, stack, previous_hole_xyz)
+        return prefix_frame, previous_hole_xyz, live_after, record
+
+    tail_action = None
+    if prefix_frame > 0:
+        tail_action = np.asarray(history[prefix_frame - 1, : int(args.robot_action_dim)], dtype=np.float32).copy()
+        record["scripted_insertion_tail_action_source_index"] = int(prefix_frame - 1)
+        record["scripted_insertion_tail_action"] = tail_action.astype(float).tolist()
+
+    last_live = live_pose_row(base_env, stack, previous_hole_xyz)
+    best_anchor_target_l2: float | None = None
+    last_anchor_target_error: dict[str, Any] | None = scripted_insertion_action_target_error(last_live, args)
+    if last_anchor_target_error is not None:
+        best_anchor_target_l2 = float(last_anchor_target_error["target_error_l2"])
+        record["scripted_insertion_action_target_error_before"] = last_anchor_target_error
+    contact_seat_latched = False
+    contact_seat_latch_enabled = bool(getattr(args, "scripted_insertion_contact_seat_latch", False))
+    record["scripted_insertion_contact_seat_latch_enabled"] = contact_seat_latch_enabled
+    record["scripted_insertion_contact_seat_phase_gate"] = {
+        "target_l2": float(getattr(args, "scripted_insertion_contact_seat_target_l2", -1.0)),
+        "min_servo_steps": int(getattr(args, "scripted_insertion_contact_seat_min_servo_steps", -1)),
+        "max_servo_l2": float(getattr(args, "scripted_insertion_contact_seat_max_servo_l2", -1.0)),
+        "max_servo_steps": int(getattr(args, "scripted_insertion_contact_seat_max_servo_steps", -1)),
+        "plateau_window": int(getattr(args, "scripted_insertion_contact_seat_plateau_window", 0)),
+        "plateau_max_l2": float(getattr(args, "scripted_insertion_contact_seat_plateau_max_l2", -1.0)),
+        "improvement_epsilon": float(getattr(args, "scripted_insertion_contact_seat_improvement_epsilon", 0.0005)),
+        "x_regression_policy": str(
+            getattr(args, "scripted_insertion_contact_seat_x_regression_policy", "stop")
+        ),
+        "probe_policy": str(getattr(args, "scripted_insertion_contact_seat_probe_policy", "disabled")),
+        "probe_min_x_improvement": float(
+            getattr(args, "scripted_insertion_contact_seat_probe_min_x_improvement", 0.0001)
+        ),
+        "probe_max_lateral_regression": float(
+            getattr(args, "scripted_insertion_contact_seat_probe_max_lateral_regression", 0.0002)
+        ),
+        "probe_require_grasp": bool(
+            getattr(args, "scripted_insertion_contact_seat_probe_require_grasp", True)
+        ),
+    }
+    steps_since_anchor_improvement = 0
+    contact_seat_best_abs_rel_x_error: float | None = None
+    contact_seat_disabled_after_x_regression = False
+    contact_seat_probe_done = False
+    contact_seat_probe_attempts = 0
+    contact_seat_x_direction_override: float | None = None
+    contact_seat_x_direction_flipped = False
+    best_target_rel_x_abs_error: float | None = None
+    adaptive_axis_multipliers = {"x": 1.0, "y": 1.0, "z": 1.0}
+    adaptive_action_frame = str(getattr(args, "scripted_insertion_action_frame", "")) in {
+        "hole_frame_adaptive_anchor_servo_keep_tail",
+        "hole_frame_direct_target_servo_keep_tail",
+    }
+    for local_i in range(max(0, int(args.scripted_insertion_max_steps))):
+        if prefix_frame >= int(args.expected_action_steps):
+            record["scripted_insertion_stop_reason"] = "action_budget_exhausted"
+            break
+        if (
+            bool(getattr(args, "scripted_insertion_anchor_stop_on_target_regression", False))
+            and local_i > 0
+            and last_anchor_target_error is not None
+            and best_anchor_target_l2 is not None
+        ):
+            regression_tolerance = float(getattr(args, "scripted_insertion_anchor_regression_tolerance", 0.0))
+            current_l2 = float(last_anchor_target_error["target_error_l2"])
+            if current_l2 > best_anchor_target_l2 + max(0.0, regression_tolerance):
+                record["scripted_insertion_stop_reason"] = "anchor_target_regression"
+                record["scripted_insertion_anchor_regression"] = {
+                    "local_step_before": int(local_i),
+                    "current_target_error": last_anchor_target_error,
+                    "best_target_error_l2": best_anchor_target_l2,
+                    "tolerance": max(0.0, regression_tolerance),
+                }
+                break
+        if bool(args.scripted_insertion_stop_on_gate_fail) and local_i > 0:
+            step_gate = scripted_insertion_gate(last_live, history, prefix_frame, args)
+            gate_allows_continue, gate_reason = scripted_step_gate_allows_continue(step_gate, args)
+            record.setdefault("scripted_insertion_step_gates", []).append(
+                {
+                    "local_step": int(local_i),
+                    "global_action_index": int(prefix_frame),
+                    "gate": step_gate,
+                    "allows_continue": bool(gate_allows_continue),
+                    "allow_reason": gate_reason,
+                }
+            )
+            if not gate_allows_continue:
+                record["scripted_insertion_stop_reason"] = "step_gate_false"
+                break
+        contact_seat_force_reason = None
+        if not contact_seat_disabled_after_x_regression:
+            contact_seat_force_reason = scripted_contact_seat_force_reason(
+                args=args,
+                local_step=int(local_i),
+                last_anchor_target_error=last_anchor_target_error,
+                steps_since_anchor_improvement=steps_since_anchor_improvement,
+            )
+        if contact_seat_latch_enabled and contact_seat_force_reason and not contact_seat_latched:
+            contact_seat_latched = True
+            record["scripted_insertion_contact_seat_latched_at_local_step"] = int(local_i)
+            record["scripted_insertion_contact_seat_latched_at_global_action_index"] = int(prefix_frame)
+            record["scripted_insertion_contact_seat_latch_reason"] = contact_seat_force_reason
+        action_for_step, action_frame_record = scripted_insertion_action_for_live(
+            base_env=base_env,
+            stack=stack,
+            live=last_live,
+            args=args,
+            local_step=int(local_i),
+            tail_action=tail_action,
+            contact_seat_latched=contact_seat_latched,
+            contact_seat_forced_reason=contact_seat_force_reason,
+            contact_seat_disabled=contact_seat_disabled_after_x_regression,
+            contact_seat_x_direction_override=contact_seat_x_direction_override,
+            adaptive_axis_multipliers=adaptive_axis_multipliers if adaptive_action_frame else None,
+        )
+        forced_gripper = float(getattr(args, "scripted_insertion_force_gripper_action", float("nan")))
+        if np.isfinite(forced_gripper):
+            action_for_step = np.asarray(action_for_step, dtype=np.float32).copy()
+            previous_gripper = float(action_for_step[6]) if action_for_step.shape[0] >= 7 else None
+            action_for_step[6] = np.float32(forced_gripper)
+            action_frame_record["forced_gripper_action"] = {
+                "enabled": True,
+                "previous_gripper_action": previous_gripper,
+                "forced_gripper_action": float(forced_gripper),
+                "boundary": (
+                    "Programmed terminal finisher gripper override from a fixed "
+                    "argument. It prevents inherited DP/open-gripper tail values "
+                    "from weakening the local insertion primitive."
+                ),
+            }
+        action_frame_record["anchor_steps_since_improvement_before_step"] = int(steps_since_anchor_improvement)
+        contact_seat_record = (
+            action_frame_record.get("contact_seat")
+            if isinstance(action_frame_record.get("contact_seat"), dict)
+            else {}
+        )
+        if (
+            contact_seat_latch_enabled
+            and not contact_seat_disabled_after_x_regression
+            and bool(contact_seat_record.get("threshold_passed", False))
+            and not contact_seat_latched
+        ):
+            contact_seat_latched = True
+            record["scripted_insertion_contact_seat_latched_at_local_step"] = int(local_i)
+            record["scripted_insertion_contact_seat_latched_at_global_action_index"] = int(prefix_frame)
+            record["scripted_insertion_contact_seat_latch_reason"] = "target_l2_threshold"
+        action_frame_record["contact_seat_latched_after_action_build"] = bool(contact_seat_latched)
+        step_action, action_record = _prepare_step_action(action_for_step, low, high, bool(args.clip_live_actions))
+        obs, reward, terminated, truncated, info = env.step(step_action)
+        external_target = apply_external_target_pose(
+            base_env=base_env,
+            stack=stack,
+            env_states=env_states,
+            source_frame=prefix_frame + 1,
+            args=args,
+        )
+        current_state_obs = read_state_obs(base_env, stack)
+        dp_obs_history.append(current_state_obs.copy())
+        live = live_pose_row(base_env, stack, previous_hole_xyz)
+        previous_hole_xyz = live["hole_xyz"]
+        last_live = live
+        fill_live_history_row(history, prefix_frame, np.asarray(action_record["executed"]), live)
+        append_live_frame(observed_frames, env, args)
+        prefix_frame += 1
+        step_record = {
+            "local_step": int(local_i),
+            "global_action_index": int(prefix_frame - 1),
+            "action": action_record,
+            "scripted_action_frame": action_frame_record,
+            "external_target": external_target,
+            "reward": jsonable(reward),
+            "terminated": jsonable(terminated),
+            "truncated": jsonable(truncated),
+            "live_eval": _live_eval(base_env),
+            "action_target_error_after_step": scripted_insertion_action_target_error(live, args),
+            "scripted_insertion_gate_after_step": scripted_insertion_gate(live, history, prefix_frame, args),
+        }
+        record["scripted_insertion_steps"].append(step_record)
+        last_anchor_target_error = step_record["action_target_error_after_step"]
+        if last_anchor_target_error is not None:
+            target_l2 = float(last_anchor_target_error["target_error_l2"])
+            improvement_epsilon = float(getattr(args, "scripted_insertion_contact_seat_improvement_epsilon", 0.0005))
+            if best_anchor_target_l2 is None or target_l2 < best_anchor_target_l2 - max(0.0, improvement_epsilon):
+                steps_since_anchor_improvement = 0
+            else:
+                steps_since_anchor_improvement += 1
+            best_anchor_target_l2 = target_l2 if best_anchor_target_l2 is None else min(best_anchor_target_l2, target_l2)
+            record["scripted_insertion_best_action_target_error_l2"] = best_anchor_target_l2
+            record["scripted_insertion_steps_since_anchor_improvement"] = int(steps_since_anchor_improvement)
+        if adaptive_action_frame and isinstance(action_frame_record, dict):
+            flip_axes = {
+                axis.strip().lower()
+                for axis in str(getattr(args, "scripted_insertion_adaptive_flip_axes", "")).split(",")
+                if axis.strip()
+            }
+            before_rel = np.asarray(
+                action_frame_record.get("peg_head_at_hole_before", live["peg_head_at_hole"]), dtype=np.float32
+            ).reshape(-1)[:3]
+            target_rel = np.asarray(action_frame_record.get("target_peg_head_at_hole", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(-1)[:3]
+            live_rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+            hole_step = np.asarray(action_frame_record.get("hole_frame_step_xyz", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(-1)[:3]
+            tolerance = max(0.0, float(getattr(args, "scripted_insertion_anchor_regression_tolerance", 0.0005)))
+            axis_names = ("x", "y", "z")
+            adaptive_record = {
+                "local_step_after": int(local_i),
+                "global_action_index": int(prefix_frame - 1),
+                "before_peg_head_at_hole": before_rel.astype(float).tolist(),
+                "live_peg_head_at_hole": live_rel.astype(float).tolist(),
+                "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+                "hole_frame_step_xyz": hole_step.astype(float).tolist(),
+                "tolerance": tolerance,
+                "flips": [],
+                "axis_multipliers_before_update": {k: float(v) for k, v in adaptive_axis_multipliers.items()},
+            }
+            for axis_i, axis_name in enumerate(axis_names):
+                if abs(float(hole_step[axis_i])) <= 1e-6:
+                    continue
+                before_abs = abs(float(target_rel[axis_i] - before_rel[axis_i]))
+                after_abs = abs(float(target_rel[axis_i] - live_rel[axis_i]))
+                axis_info = {
+                    "axis": axis_name,
+                    "before_abs_error": before_abs,
+                    "after_abs_error": after_abs,
+                    "step": float(hole_step[axis_i]),
+                    "flip_allowed": axis_name in flip_axes,
+                    "flipped": False,
+                }
+                if axis_name in flip_axes and after_abs > before_abs + tolerance:
+                    adaptive_axis_multipliers[axis_name] = -float(adaptive_axis_multipliers.get(axis_name, 1.0))
+                    axis_info["flipped"] = True
+                    axis_info["new_multiplier"] = float(adaptive_axis_multipliers[axis_name])
+                    adaptive_record["flips"].append(axis_info)
+                else:
+                    axis_info["new_multiplier"] = float(adaptive_axis_multipliers.get(axis_name, 1.0))
+                adaptive_record.setdefault("axes", []).append(axis_info)
+            adaptive_record["axis_multipliers_after_update"] = {
+                k: float(v) for k, v in adaptive_axis_multipliers.items()
+            }
+            record.setdefault("scripted_insertion_adaptive_axis_updates", []).append(adaptive_record)
+            step_record["scripted_insertion_adaptive_axis_update"] = adaptive_record
+        compound_frame = str(action_frame_record.get("compound_action_frame", ""))
+        compound_phase = str(action_frame_record.get("compound_phase_frame", ""))
+        skip_target_rel_x_regression = bool(
+            compound_frame == "hole_frame_peg_pose_rot_then_direct_target"
+            and compound_phase != "hole_frame_direct_target_servo_keep_tail"
+        )
+        if (
+            bool(getattr(args, "scripted_insertion_stop_on_target_rel_x_regression", False))
+            and not skip_target_rel_x_regression
+        ):
+            target_rel_for_x = action_frame_record.get("target_peg_head_at_hole")
+            if target_rel_for_x is None:
+                direct_target_rel = scripted_insertion_action_target_rel(args)
+                target_rel_for_x = None if direct_target_rel is None else direct_target_rel.astype(float).tolist()
+            if target_rel_for_x is not None:
+                target_rel_x = float(np.asarray(target_rel_for_x, dtype=np.float32).reshape(-1)[0])
+                before_rel = np.asarray(
+                    action_frame_record.get("peg_head_at_hole_before", live["peg_head_at_hole"]),
+                    dtype=np.float32,
+                ).reshape(-1)[:3]
+                live_rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+                before_abs_error = abs(target_rel_x - float(before_rel[0]))
+                current_abs_error = abs(target_rel_x - float(live_rel[0]))
+                if best_target_rel_x_abs_error is None:
+                    best_target_rel_x_abs_error = min(before_abs_error, current_abs_error)
+                tolerance = max(
+                    0.0,
+                    float(getattr(args, "scripted_insertion_target_rel_x_regression_tolerance", 0.0)),
+                )
+                rel_x_stop_record = {
+                    "local_step_after": int(local_i),
+                    "global_action_index": int(prefix_frame - 1),
+                    "target_rel_x": target_rel_x,
+                    "before_abs_error": before_abs_error,
+                    "current_abs_error": current_abs_error,
+                    "best_abs_error": float(best_target_rel_x_abs_error),
+                    "tolerance": tolerance,
+                    "before_peg_head_at_hole": before_rel.astype(float).tolist(),
+                    "live_peg_head_at_hole": live_rel.astype(float).tolist(),
+                    "boundary": (
+                        "Live target-rel-x regression stop. It observes only the "
+                        "current simulator state after an action and prevents "
+                        "continuing a local seating primitive after x-depth "
+                        "progress reverses."
+                    ),
+                }
+                record.setdefault("scripted_insertion_target_rel_x_progress", []).append(rel_x_stop_record)
+                step_record["scripted_insertion_target_rel_x_progress"] = rel_x_stop_record
+                if current_abs_error > best_target_rel_x_abs_error + tolerance:
+                    record["scripted_insertion_stop_reason"] = "target_rel_x_regression"
+                    record["scripted_insertion_target_rel_x_regression"] = rel_x_stop_record
+                    break
+                best_target_rel_x_abs_error = min(best_target_rel_x_abs_error, current_abs_error)
+        contact_seat_probe_policy = str(getattr(args, "scripted_insertion_contact_seat_probe_policy", "disabled"))
+        if (
+            contact_seat_probe_policy in {"disable_on_nonimprovement", "flip_once_on_nonimprovement"}
+            and not contact_seat_probe_done
+            and bool(contact_seat_record.get("active", False))
+            and bool(getattr(args, "scripted_insertion_contact_seat_x_servo", False))
+        ):
+            contact_seat_probe_attempts += 1
+            target_rel_x = float(getattr(args, "scripted_insertion_contact_seat_target_rel_x", 0.0))
+            before_rel = np.asarray(
+                action_frame_record.get("peg_head_at_hole_before", live["peg_head_at_hole"]),
+                dtype=np.float32,
+            ).reshape(-1)[:3]
+            live_rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+            before_abs_x = abs(target_rel_x - float(before_rel[0]))
+            current_abs_x = abs(target_rel_x - float(live_rel[0]))
+            x_improvement = before_abs_x - current_abs_x
+            before_lateral_l2 = float(np.linalg.norm(before_rel[1:3]))
+            current_lateral_l2 = float(np.linalg.norm(live_rel[1:3]))
+            lateral_regression = current_lateral_l2 - before_lateral_l2
+            min_x_improvement = max(
+                0.0,
+                float(getattr(args, "scripted_insertion_contact_seat_probe_min_x_improvement", 0.0001)),
+            )
+            max_lateral_regression = max(
+                0.0,
+                float(getattr(args, "scripted_insertion_contact_seat_probe_max_lateral_regression", 0.0002)),
+            )
+            gate_after = step_record.get("scripted_insertion_gate_after_step")
+            live_grasped = True
+            if isinstance(gate_after, dict) and "live_grasped" in gate_after:
+                live_grasped = bool(gate_after.get("live_grasped"))
+            require_grasp = bool(getattr(args, "scripted_insertion_contact_seat_probe_require_grasp", True))
+            probe_ok = bool(
+                x_improvement >= min_x_improvement
+                and lateral_regression <= max_lateral_regression
+                and (live_grasped or not require_grasp)
+            )
+            probe_record = {
+                "attempt": int(contact_seat_probe_attempts),
+                "local_step_after": int(local_i),
+                "global_action_index": int(prefix_frame - 1),
+                "policy": contact_seat_probe_policy,
+                "before_peg_head_at_hole": before_rel.astype(float).tolist(),
+                "live_peg_head_at_hole": live_rel.astype(float).tolist(),
+                "target_rel_x": target_rel_x,
+                "before_abs_rel_x_error": before_abs_x,
+                "current_abs_rel_x_error": current_abs_x,
+                "x_improvement": x_improvement,
+                "min_x_improvement": min_x_improvement,
+                "before_lateral_l2": before_lateral_l2,
+                "current_lateral_l2": current_lateral_l2,
+                "lateral_regression": lateral_regression,
+                "max_lateral_regression": max_lateral_regression,
+                "live_grasped": live_grasped,
+                "require_grasp": require_grasp,
+                "ok": probe_ok,
+                "x_direction_before": (
+                    float(contact_seat_record.get("x_servo", {}).get("direction_for_positive_error"))
+                    if isinstance(contact_seat_record.get("x_servo"), dict)
+                    and "direction_for_positive_error" in contact_seat_record.get("x_servo", {})
+                    else None
+                ),
+            }
+            record["scripted_insertion_contact_seat_probe"] = probe_record
+            record.setdefault("scripted_insertion_contact_seat_probes", []).append(probe_record)
+            if probe_ok:
+                contact_seat_probe_done = True
+            if not probe_ok:
+                if contact_seat_probe_policy == "flip_once_on_nonimprovement" and not contact_seat_x_direction_flipped:
+                    current_direction = probe_record.get("x_direction_before")
+                    if current_direction is None or not np.isfinite(float(current_direction)):
+                        current_direction = float(
+                            getattr(args, "scripted_insertion_contact_seat_x_servo_direction", 1.0)
+                        )
+                    contact_seat_x_direction_override = -1.0 if float(current_direction) >= 0.0 else 1.0
+                    contact_seat_x_direction_flipped = True
+                    record["scripted_insertion_contact_seat_x_direction_flipped"] = True
+                    record["scripted_insertion_contact_seat_x_direction_flip_at_local_step"] = int(local_i)
+                    record["scripted_insertion_contact_seat_x_direction_after_flip"] = float(
+                        contact_seat_x_direction_override
+                    )
+                    record.setdefault("scripted_insertion_contact_seat_probe_events", []).append(
+                        {
+                            **probe_record,
+                            "reason": "contact_seat_probe_nonimprovement_flip_x_direction",
+                            "next_x_direction": float(contact_seat_x_direction_override),
+                        }
+                    )
+                    continue
+                contact_seat_probe_done = True
+                contact_seat_disabled_after_x_regression = True
+                contact_seat_latched = False
+                record["scripted_insertion_contact_seat_disabled_after_probe"] = True
+                record["scripted_insertion_contact_seat_disabled_at_local_step"] = int(local_i)
+                record.setdefault("scripted_insertion_contact_seat_disable_events", []).append(
+                    {
+                        **probe_record,
+                        "reason": "contact_seat_probe_nonimprovement",
+                    }
+                )
+                continue
+        if (
+            bool(getattr(args, "scripted_insertion_contact_seat_stop_on_x_regression", False))
+            and bool(contact_seat_record.get("active", False))
+            and bool(getattr(args, "scripted_insertion_contact_seat_x_servo", False))
+        ):
+            target_rel_x = float(getattr(args, "scripted_insertion_contact_seat_target_rel_x", 0.0))
+            before_x_servo = contact_seat_record.get("x_servo", {})
+            if isinstance(before_x_servo, dict) and "rel_x_error" in before_x_servo:
+                before_abs_error = abs(float(before_x_servo["rel_x_error"]))
+                if contact_seat_best_abs_rel_x_error is None:
+                    contact_seat_best_abs_rel_x_error = before_abs_error
+            live_rel = np.asarray(live["peg_head_at_hole"], dtype=np.float32).reshape(-1)[:3]
+            current_abs_error = abs(target_rel_x - float(live_rel[0]))
+            if contact_seat_best_abs_rel_x_error is None:
+                contact_seat_best_abs_rel_x_error = current_abs_error
+            tolerance = max(
+                0.0,
+                float(getattr(args, "scripted_insertion_contact_seat_x_regression_tolerance", 0.0005)),
+            )
+            record["scripted_insertion_contact_seat_best_abs_rel_x_error"] = float(
+                contact_seat_best_abs_rel_x_error
+            )
+            if current_abs_error > contact_seat_best_abs_rel_x_error + tolerance:
+                record["scripted_insertion_contact_seat_x_regression"] = {
+                    "local_step_after": int(local_i),
+                    "current_abs_rel_x_error": current_abs_error,
+                    "best_abs_rel_x_error": float(contact_seat_best_abs_rel_x_error),
+                    "tolerance": tolerance,
+                    "target_rel_x": target_rel_x,
+                    "live_peg_head_at_hole": live_rel.astype(float).tolist(),
+                }
+                x_regression_policy = str(
+                    getattr(args, "scripted_insertion_contact_seat_x_regression_policy", "stop")
+                )
+                record["scripted_insertion_contact_seat_x_regression_policy"] = x_regression_policy
+                if x_regression_policy == "disable_contact_seat_continue":
+                    contact_seat_disabled_after_x_regression = True
+                    contact_seat_latched = False
+                    record["scripted_insertion_contact_seat_disabled_after_x_regression"] = True
+                    record["scripted_insertion_contact_seat_disabled_at_local_step"] = int(local_i)
+                    record.setdefault("scripted_insertion_contact_seat_disable_events", []).append(
+                        {
+                            "local_step_after": int(local_i),
+                            "global_action_index": int(prefix_frame - 1),
+                            "reason": "contact_seat_x_regression",
+                            "live_peg_head_at_hole": live_rel.astype(float).tolist(),
+                            "current_abs_rel_x_error": current_abs_error,
+                            "best_abs_rel_x_error": float(contact_seat_best_abs_rel_x_error),
+                            "policy": x_regression_policy,
+                        }
+                    )
+                    continue
+                record["scripted_insertion_stop_reason"] = "contact_seat_x_regression"
+                break
+            contact_seat_best_abs_rel_x_error = min(contact_seat_best_abs_rel_x_error, current_abs_error)
+        if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
+            record["terminated_or_truncated"] = True
+            record["scripted_insertion_stop_reason"] = "terminated_or_truncated"
+            break
+        if _live_eval(base_env).get("success"):
+            record["live_success_observed_during_scripted_insertion"] = True
+            if bool(getattr(args, "scripted_insertion_stop_on_success", False)) or not bool(args.full_episode_rollout):
+                record["scripted_insertion_stop_reason"] = "live_success"
+                break
+    record["scripted_insertion_executed"] = bool(record["scripted_insertion_steps"])
+    record.setdefault(
+        "scripted_insertion_stop_reason",
+        "max_steps_executed" if record["scripted_insertion_steps"] else "no_steps_executed",
+    )
+    record["after_scripted_insertion_eval"] = _live_eval(base_env)
+    record["after_scripted_insertion_gate"] = scripted_insertion_gate(last_live, history, prefix_frame, args)
+    return prefix_frame, previous_hole_xyz, last_live, record
+
+
+def maybe_apply_oracle_final_seat_demo(
+    *,
+    env: Any,
+    base_env: Any,
+    env_states: list[Any],
+    args: argparse.Namespace,
+    observed_frames: list[Any],
+) -> dict[str, Any] | None:
+    mode = str(getattr(args, "oracle_final_seat_mode", "disabled"))
+    if mode == "disabled":
+        return None
+    before_eval = _live_eval(base_env)
+    if bool(before_eval.get("success", False)):
+        return {
+            "mode": mode,
+            "applied": False,
+            "reason": "already_success_before_oracle",
+            "before_eval": before_eval,
+            "method_evidence_allowed": False,
+            "boundary": "Oracle/manual final-seat demo was armed but normal control already succeeded.",
+        }
+    if mode != "source_state":
+        raise ValueError(f"unsupported oracle_final_seat_mode={mode}")
+    frame = int(getattr(args, "oracle_final_seat_source_frame", 300))
+    if frame < 0 or frame >= len(env_states):
+        raise IndexError(f"oracle final-seat source frame {frame} outside env_state length {len(env_states)}")
+    base_env.set_state_dict(env_states[frame])
+    after_eval = _live_eval(base_env)
+    replaced_frame = False
+    if bool(args.render_live_video):
+        rendered = _render_frame(env)
+        if observed_frames:
+            observed_frames[-1] = rendered
+        else:
+            observed_frames.append(rendered)
+        replaced_frame = True
+    return {
+        "mode": mode,
+        "applied": True,
+        "source_frame": frame,
+        "before_eval": before_eval,
+        "after_eval": after_eval,
+        "rendered_final_frame_replaced": replaced_frame,
+        "method_evidence_allowed": False,
+        "artifact_role": "oracle_manual_final_seat_demo",
+        "boundary": (
+            "User-requested success demo / smoke path. It restores a source "
+            "inserted simulator state after the automated controller run. It "
+            "proves rendering/eval/demo plumbing only and must not be reported "
+            "as automated method success, DP success, Cosmos success, or a "
+            "valid dynamic controller result."
+        ),
+    }
+
+
+def maybe_apply_live_geometric_final_seat_demo(
+    *,
+    env: Any,
+    base_env: Any,
+    stack: dict[str, Any],
+    args: argparse.Namespace,
+    observed_frames: list[Any],
+) -> dict[str, Any] | None:
+    mode = str(getattr(args, "live_geometric_final_seat_mode", "disabled"))
+    if mode == "disabled":
+        return None
+    before_eval = _live_eval(base_env)
+    if bool(before_eval.get("success", False)):
+        return {
+            "mode": mode,
+            "applied": False,
+            "reason": "already_success_before_live_geometric_seat",
+            "before_eval": before_eval,
+            "method_evidence_allowed": False,
+            "boundary": "Live geometric final-seat smoke was armed but normal control already succeeded.",
+        }
+    if mode != "peg_head_to_hole":
+        raise ValueError(f"unsupported live_geometric_final_seat_mode={mode}")
+    target_rel = np.asarray(_parse_float_list(args.live_geometric_final_seat_target_rel), dtype=np.float32)
+    if target_rel.shape[0] != 3:
+        raise ValueError("--live-geometric-final-seat-target-rel must contain exactly 3 floats")
+
+    torch = stack["torch"]
+    from mani_skill.utils.structs import Pose
+
+    p_t = torch.as_tensor(target_rel, device=base_env.device, dtype=base_env.peg.pose.p.dtype).view(1, 3)
+    q_t = torch.as_tensor([1.0, 0.0, 0.0, 0.0], device=base_env.device, dtype=base_env.peg.pose.q.dtype).view(1, 4)
+    target_head_pose = base_env.box_hole_pose * Pose.create_from_pq(p_t, q_t)
+    peg_to_head = base_env.peg.pose.inv() * base_env.peg_head_pose
+    target_peg_pose = target_head_pose * peg_to_head.inv()
+    before_live = live_pose_row(base_env, stack, None)
+    base_env.peg.set_pose(target_peg_pose)
+    after_eval = _live_eval(base_env)
+    after_live = live_pose_row(base_env, stack, None)
+    replaced_frame = False
+    if bool(args.render_live_video):
+        rendered = _render_frame(env)
+        if observed_frames:
+            observed_frames[-1] = rendered
+        else:
+            observed_frames.append(rendered)
+        replaced_frame = True
+    return {
+        "mode": mode,
+        "applied": True,
+        "target_peg_head_at_hole": target_rel.astype(float).tolist(),
+        "before_eval": before_eval,
+        "after_eval": after_eval,
+        "before_live_peg_head_at_hole": np.asarray(before_live["peg_head_at_hole"], dtype=float).tolist(),
+        "after_live_peg_head_at_hole": np.asarray(after_live["peg_head_at_hole"], dtype=float).tolist(),
+        "rendered_final_frame_replaced": replaced_frame,
+        "method_evidence_allowed": False,
+        "artifact_role": "live_geometric_final_seat_smoke",
+        "boundary": (
+            "User-requested success-demo smoke path. It computes a final peg pose "
+            "from the current live hole pose and current peg-to-peg-head geometry, "
+            "then sets the peg pose once. It does not read future source env_states, "
+            "replay a saved successful suffix, or use human per-episode choices, "
+            "but it is still a simulator state intervention and must not be "
+            "reported as automated policy, DP, or Cosmos method success."
+        ),
+    }
+
+
 def write_partial_summary(output_root: Path, summary: dict[str, Any], base_env: Any, prefix_frame: int, observed_frames: list[Any]) -> None:
     partial = dict(summary)
     partial["partial"] = True
@@ -2994,7 +5925,7 @@ def build_source_restore_prefix(
             prefix_frame=prefix_frame,
         )
     base_env.set_state_dict(env_states[prefix_frame])
-    if args.prefix_frame_source == "render_env_states":
+    if args.prefix_frame_source == "render_env_states" and bool(args.render_live_video):
         if int(args.live_progress_interval) > 0:
             emit_live_progress(
                 "live_source_restore_before_render_prefix",
@@ -3012,10 +5943,13 @@ def build_source_restore_prefix(
                 observed_frames=len(observed_frames),
             )
     else:
-        initial_video = Path(args.initial_video).resolve() if args.initial_video else None
-        if initial_video is None:
-            raise SystemExit("--initial-video is required when --prefix-frame-source=initial_video")
-        observed_frames = read_initial_frames(initial_video, prefix_frame + 1)
+        if args.prefix_frame_source == "render_env_states":
+            observed_frames = []
+        else:
+            initial_video = Path(args.initial_video).resolve() if args.initial_video else None
+            if initial_video is None:
+                raise SystemExit("--initial-video is required when --prefix-frame-source=initial_video")
+            observed_frames = read_initial_frames(initial_video, prefix_frame + 1)
     history = initialize_history_from_source(source_h5, prefix_frame, args)
     current_state_obs = read_state_obs(base_env, stack)
     dp_obs_history: list[np.ndarray] = [current_state_obs.copy(), current_state_obs.copy()]
@@ -3061,43 +5995,171 @@ def run_live_dp_until_trigger(
             device=str(dp_device),
         )
 
+    debug_init = int(args.live_progress_interval) > 0
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_before_initial_set_state",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            env_state_count=int(len(env_states)),
+        )
     base_env.set_state_dict(env_states[0])
-    observed_frames: list[Any] = [_render_frame(env)]
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_after_initial_set_state",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+        )
+    observed_frames: list[Any] = []
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_before_initial_render",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            render_live_video=bool(args.render_live_video),
+        )
+    append_live_frame(observed_frames, env, args)
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_after_initial_render",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            observed_frames=int(len(observed_frames)),
+        )
     history = empty_history(args)
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_before_initial_state_obs",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+        )
     current_state_obs = read_state_obs(base_env, stack)
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_after_initial_state_obs",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            state_obs_shape=[int(v) for v in np.asarray(current_state_obs).shape],
+        )
     dp_obs_history: list[np.ndarray] = [current_state_obs.copy(), current_state_obs.copy()]
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_before_initial_live_pose",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+        )
     initial_live = live_pose_row(base_env, stack, None)
     initial_hole_xyz = initial_live["hole_xyz"].copy()
     previous_hole_xyz = initial_hole_xyz.copy()
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_after_initial_live_pose",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            initial_hole_xyz=jsonable(initial_hole_xyz),
+            initial_live_eval=_live_eval(base_env),
+        )
     consecutive = 0
     first_streak_frame: int | None = None
     trigger_records: list[dict[str, Any]] = []
     pretrigger_steps: list[dict[str, Any]] = []
     prefix_frame = 0
     dp_call_index = 0
+    if debug_init:
+        emit_live_progress(
+            "live_pretrigger_debug_before_loop",
+            sample_name=args.sample_name,
+            scenario=args.scenario,
+            prefix_frame=int(prefix_frame),
+            max_pretrigger_frame=int(min(args.expected_action_steps, len(env_states) - 1)),
+        )
 
     while prefix_frame < min(args.expected_action_steps, len(env_states) - 1):
+        debug_pretrigger_call = (
+            int(args.live_progress_interval) > 0
+            and prefix_frame < max(0, int(args.pretrigger_debug_steps))
+        )
+        if debug_pretrigger_call:
+            emit_live_progress(
+                "live_pretrigger_debug_before_dp_action",
+                sample_name=args.sample_name,
+                scenario=args.scenario,
+                prefix_frame=int(prefix_frame),
+                dp_call_index=int(dp_call_index),
+                dp_obs_history_len=int(len(dp_obs_history)),
+            )
         obs_seq = np.stack(dp_obs_history[-2:], axis=0)[None].astype(np.float32)
         obs_tensor = torch.as_tensor(obs_seq, device=dp_device, dtype=torch.float32)
-        with torch.no_grad():
-            action_seq = dp_agent.get_action(obs_tensor)
+        action_seq, dp_seed_record = dp_get_action_seeded(
+            dp_agent=dp_agent,
+            obs_tensor=obs_tensor,
+            stack=stack,
+            args=args,
+            call_site="pretrigger",
+            prefix_frame=prefix_frame,
+            iteration=0,
+            dp_call_index=dp_call_index,
+        )
         if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu":
             action_seq_np = action_seq.detach().cpu().numpy()
         else:
             action_seq_np = action_seq
         act_horizon = int(action_seq_np.shape[1])
+        if debug_pretrigger_call:
+            emit_live_progress(
+                "live_pretrigger_debug_after_dp_action",
+                sample_name=args.sample_name,
+                scenario=args.scenario,
+                prefix_frame=int(prefix_frame),
+                dp_call_index=int(dp_call_index),
+                action_shape=[int(v) for v in action_seq_np.shape],
+                dp_sampling=dp_seed_record,
+            )
         if act_horizon <= 0:
             raise RuntimeError("frozen DP returned empty pretrigger action sequence")
         for chunk_local_i in range(act_horizon):
             if prefix_frame >= min(args.expected_action_steps, len(env_states) - 1):
                 break
+            debug_pretrigger_step = (
+                int(args.live_progress_interval) > 0
+                and prefix_frame < max(0, int(args.pretrigger_debug_steps))
+            )
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_before_prepare_action",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    chunk_local_step=int(chunk_local_i),
+                    raw_action=jsonable(action_seq_np[:, chunk_local_i]),
+                )
             step_action, action_record = _prepare_step_action(
                 action_seq_np[:, chunk_local_i],
                 low,
                 high,
                 bool(args.clip_live_actions),
             )
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_before_env_step",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    chunk_local_step=int(chunk_local_i),
+                    action=action_record,
+                )
             obs, reward, terminated, truncated, info = env.step(step_action)
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_after_env_step",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    chunk_local_step=int(chunk_local_i),
+                    reward=jsonable(reward),
+                    terminated=jsonable(terminated),
+                    truncated=jsonable(truncated),
+                )
             external_target = apply_external_target_pose(
                 base_env=base_env,
                 stack=stack,
@@ -3105,11 +6167,36 @@ def run_live_dp_until_trigger(
                 source_frame=prefix_frame + 1,
                 args=args,
             )
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_after_external_target",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    source_frame=int(prefix_frame + 1),
+                    external_target=external_target,
+                )
             current_state_obs = read_state_obs(base_env, stack)
             dp_obs_history.append(current_state_obs.copy())
             live = live_pose_row(base_env, stack, previous_hole_xyz)
             fill_live_history_row(history, prefix_frame, np.asarray(action_record["executed"]), live)
-            observed_frames.append(_render_frame(env))
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_before_render",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    observed_frames=int(len(observed_frames)),
+                )
+            append_live_frame(observed_frames, env, args)
+            if debug_pretrigger_step:
+                emit_live_progress(
+                    "live_pretrigger_debug_after_render",
+                    sample_name=args.sample_name,
+                    scenario=args.scenario,
+                    prefix_frame=int(prefix_frame),
+                    observed_frames=int(len(observed_frames)),
+                )
             prefix_frame += 1
             triggered, consecutive, first_streak_frame, trigger_record = target_motion_update(
                 frame=prefix_frame,
@@ -3137,10 +6224,14 @@ def run_live_dp_until_trigger(
                     hole_speed=float(trigger_record.get("target_speed", 0.0)),
                     live_eval=_live_eval(base_env),
                 )
+            pretrigger_scripted_gate = None
+            if bool(args.pretrigger_scripted_gate_stop) and str(args.scripted_insertion_mode) != "disabled":
+                pretrigger_scripted_gate = scripted_insertion_gate(live, history, prefix_frame, args)
             pretrigger_steps.append(
                 {
                     "global_action_index": int(prefix_frame - 1),
                     "dp_call_index": int(dp_call_index),
+                    "dp_sampling": dp_seed_record,
                     "chunk_local_step": int(chunk_local_i),
                     "action": action_record,
                     "external_target": external_target,
@@ -3149,8 +6240,50 @@ def run_live_dp_until_trigger(
                     "truncated": jsonable(truncated),
                     "live_eval": _live_eval(base_env),
                     "target_motion": trigger_record,
+                    "pretrigger_scripted_insertion_gate": pretrigger_scripted_gate,
                 }
             )
+            if pretrigger_scripted_gate is not None and bool(pretrigger_scripted_gate.get("ok", False)):
+                prefix_selection = {
+                    "mode": "pretrigger_scripted_insertion_gate",
+                    "pretrigger_control_mode": "frozen_dp_until_target_motion",
+                    "prefix_frame_index": int(prefix_frame),
+                    "detected_frame_index": None,
+                    "first_streak_frame_index": first_streak_frame,
+                    "triggered": False,
+                    "wm_triggered": False,
+                    "thresholds": {
+                        "min_dynamic_prefix_frame": int(args.min_dynamic_prefix_frame),
+                        "target_motion_delta": float(args.target_motion_delta_threshold),
+                        "target_motion_speed": float(args.target_motion_speed_threshold),
+                        "consecutive_frames": int(args.target_motion_consecutive_frames),
+                    },
+                    "scripted_insertion_gate": pretrigger_scripted_gate,
+                    "pretrigger_dp_steps": len(pretrigger_steps),
+                    "pretrigger_dp_sampling_tail": [
+                        step.get("dp_sampling")
+                        for step in pretrigger_steps[-12:]
+                        if step.get("dp_sampling") is not None
+                    ],
+                    "records_tail": trigger_records[-12:],
+                    "causal_boundary": (
+                        "Frozen DP produced the live prefix from reset. The prefix "
+                        "stopped because the programmed live near-hole / grasp gate "
+                        "passed before the target-motion detector requested Cosmos, "
+                        "allowing the main loop to automatically try DP handoff or "
+                        "the bounded local finisher from the current live state."
+                    ),
+                }
+                return (
+                    int(prefix_frame),
+                    observed_frames,
+                    history,
+                    dp_obs_history,
+                    previous_hole_xyz,
+                    prefix_selection,
+                    dp_agent,
+                    dp_args,
+                )
             if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
                 terminal_record = {
                     "frame_index": int(prefix_frame),
@@ -3197,7 +6330,7 @@ def run_live_dp_until_trigger(
                     dp_obs_history.append(current_state_obs.copy())
                     live = live_pose_row(base_env, stack, previous_hole_xyz)
                     fill_live_history_row(history, prefix_frame, zero_action, live)
-                    observed_frames.append(_render_frame(env))
+                    append_live_frame(observed_frames, env, args)
                     prefix_frame += 1
                     triggered_during_padding, consecutive, first_streak_frame, pad_motion_record = target_motion_update(
                         frame=prefix_frame,
@@ -3268,6 +6401,11 @@ def run_live_dp_until_trigger(
                             "separate static-sample branch or invoking Cosmos."
                         ),
                         "pretrigger_dp_steps": len(pretrigger_steps),
+                        "pretrigger_dp_sampling_tail": [
+                            step.get("dp_sampling")
+                            for step in pretrigger_steps[-12:]
+                            if step.get("dp_sampling") is not None
+                        ],
                         "terminal_before_target_motion": terminal_record,
                         "terminal_padding_steps": len(terminal_padding_steps),
                         "future_target_motion_scan_after_terminal": future_motion,
@@ -3299,6 +6437,11 @@ def run_live_dp_until_trigger(
                         "is observable under the consecutive-frame rule."
                     ),
                     "pretrigger_dp_steps": len(pretrigger_steps),
+                    "pretrigger_dp_sampling_tail": [
+                        step.get("dp_sampling")
+                        for step in pretrigger_steps[-12:]
+                        if step.get("dp_sampling") is not None
+                    ],
                     "records_tail": trigger_records[-12:],
                 }
                 return (
@@ -3340,6 +6483,11 @@ def run_live_dp_until_trigger(
                 "static-sample branch."
             ),
             "pretrigger_dp_steps": len(pretrigger_steps),
+            "pretrigger_dp_sampling_tail": [
+                step.get("dp_sampling")
+                for step in pretrigger_steps[-12:]
+                if step.get("dp_sampling") is not None
+            ],
             "records_tail": trigger_records[-12:],
         },
         dp_agent,
@@ -3355,18 +6503,60 @@ def main() -> int:
         raise SystemExit("active contract requires 301 video frames and 300 action steps")
     if args.expected_action_dim != len(FULL_EPISODE_VECTOR_NAMES):
         raise SystemExit("expected action dim does not match WAM vector names")
+    if not bool(args.render_live_video) and bool(args.run_cosmos_inference):
+        raise SystemExit("--no-render-live-video is allowed only when --no-run-cosmos-inference is active")
     if args.controller_action_source in {"residual_executor", "contact_executor", "candidate_executor"} and not args.executor_checkpoint:
         raise SystemExit(f"--executor-checkpoint is required for --controller-action-source={args.controller_action_source}")
+    if args.controller_action_source == "causal_suffix_diffusion" and not args.causal_suffix_diffusion_checkpoint:
+        raise SystemExit("--causal-suffix-diffusion-checkpoint is required for --controller-action-source=causal_suffix_diffusion")
     if args.candidate_outcome_scorer_checkpoint and args.controller_action_source != "candidate_executor":
         raise SystemExit("--candidate-outcome-scorer-checkpoint requires --controller-action-source=candidate_executor")
     try:
         args.continuability_profile = apply_continuability_stats(args)
     except Exception as exc:
         raise SystemExit(f"invalid continuability stats profile: {exc}") from exc
+    try:
+        args.scripted_insertion_action_vector = (
+            parse_scripted_insertion_action(args)
+            if str(args.scripted_insertion_mode) != "disabled"
+            else None
+        )
+    except Exception as exc:
+        raise SystemExit(f"invalid scripted insertion config: {exc}") from exc
+    args.scripted_insertion_teacher_table_rows = None
+    if (
+        str(args.scripted_insertion_mode) != "disabled"
+        and str(args.scripted_insertion_action_frame).startswith("teacher_table_")
+    ):
+        if not str(args.scripted_insertion_teacher_table_jsonl).strip():
+            raise SystemExit(
+                "--scripted-insertion-teacher-table-jsonl is required for "
+                f"--scripted-insertion-action-frame={args.scripted_insertion_action_frame}"
+            )
+        try:
+            args.scripted_insertion_teacher_table_rows = load_teacher_terminal_phase_table(
+                args.scripted_insertion_teacher_table_jsonl,
+                args,
+            )
+        except Exception as exc:
+            raise SystemExit(f"invalid scripted teacher terminal table config: {exc}") from exc
 
     output_root = Path(args.output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     source_h5 = Path(args.source_h5).resolve()
+    try:
+        args.scripted_insertion_terminal_pose_anchor = load_scripted_terminal_pose_anchor(source_h5, args)
+    except Exception as exc:
+        raise SystemExit(f"invalid scripted terminal pose gate config: {exc}") from exc
+    try:
+        action_target_frame = int(args.scripted_insertion_action_target_source_frame)
+        args.scripted_insertion_action_target_anchor = (
+            load_scripted_source_pose_anchor(source_h5, action_target_frame)
+            if action_target_frame >= 0
+            else None
+        )
+    except Exception as exc:
+        raise SystemExit(f"invalid scripted insertion action target config: {exc}") from exc
     initial_video = Path(args.initial_video).resolve() if args.initial_video else None
     if args.prefix_frame_source == "initial_video" and initial_video is None:
         raise SystemExit("--initial-video is required when --prefix-frame-source=initial_video")
@@ -3426,6 +6616,7 @@ def main() -> int:
         ),
         "full_episode_rollout": bool(args.full_episode_rollout),
         "annotate_video": bool(args.annotate_video),
+        "render_live_video": bool(args.render_live_video),
         "max_episode_steps": int(args.max_episode_steps),
         "expected_video_frames": int(args.expected_video_frames),
         "expected_action_steps": int(args.expected_action_steps),
@@ -3435,8 +6626,138 @@ def main() -> int:
         "external_target_mode": args.external_target_mode,
         "dp_checkpoint": str(Path(args.dp_checkpoint).resolve()) if args.dp_checkpoint else None,
         "dp_state_key": args.dp_state_key,
+        "dp_action_seed_base": int(args.dp_action_seed_base),
+        "dp_action_seed_boundary": (
+            "Values <0 preserve the original stochastic frozen-DP diffusion "
+            "sampling. Non-negative values deterministically seed each DP "
+            "sampling call and record the derived seed in the rollout artifacts; "
+            "this is a reproducibility control, not an oracle input."
+        ),
         "dp_handoff_horizon": int(args.dp_handoff_horizon),
         "dp_handoff_chunk_horizon": int(args.dp_handoff_chunk_horizon),
+        "scripted_insertion": {
+            "mode": str(args.scripted_insertion_mode),
+            "action": (
+                np.asarray(args.scripted_insertion_action_vector, dtype=np.float32).astype(float).tolist()
+                if args.scripted_insertion_action_vector is not None
+                else None
+            ),
+            "max_steps": int(args.scripted_insertion_max_steps),
+            "action_frame": str(args.scripted_insertion_action_frame),
+            "teacher_table": {
+                "jsonl": str(args.scripted_insertion_teacher_table_jsonl),
+                "loaded_rows": (
+                    len(args.scripted_insertion_teacher_table_rows)
+                    if isinstance(args.scripted_insertion_teacher_table_rows, list)
+                    else 0
+                ),
+                "k": int(args.scripted_insertion_teacher_table_k),
+                "min_offset": int(args.scripted_insertion_teacher_table_min_offset),
+                "max_offset": int(args.scripted_insertion_teacher_table_max_offset),
+                "query_weights": str(args.scripted_insertion_teacher_table_query_weights),
+                "max_distance": float(args.scripted_insertion_teacher_table_max_distance),
+                "min_action_x": float(args.scripted_insertion_teacher_table_min_action_x),
+                "max_action_x": float(args.scripted_insertion_teacher_table_max_action_x),
+                "scenario_match": bool(args.scripted_insertion_teacher_table_scenario_match),
+                "boundary": (
+                    "Only active for teacher_table_nearest_action* frames. "
+                    "Rows are offline teacher/planner terminal experience for "
+                    "a local action selector, not source-suffix replay or "
+                    "deployed success evidence by themselves."
+                ),
+            },
+            "action_target": {
+                "source_frame": int(args.scripted_insertion_action_target_source_frame),
+                "target_rel": str(getattr(args, "scripted_insertion_action_target_rel", "")),
+                "gain": float(args.scripted_insertion_action_target_gain),
+                "rot_gain": float(args.scripted_insertion_action_target_rot_gain),
+                "rot_cap": float(args.scripted_insertion_action_target_rot_cap),
+                "rot_source": str(args.scripted_insertion_action_target_rot_source),
+                "stop_on_target_regression": bool(args.scripted_insertion_anchor_stop_on_target_regression),
+                "regression_tolerance": float(args.scripted_insertion_anchor_regression_tolerance),
+                "contact_seat": {
+                    "target_l2": float(args.scripted_insertion_contact_seat_target_l2),
+                    "latch": bool(args.scripted_insertion_contact_seat_latch),
+                    "step_rel_x": float(args.scripted_insertion_contact_seat_step_rel_x),
+                    "x_servo": bool(args.scripted_insertion_contact_seat_x_servo),
+                    "target_rel_x": float(args.scripted_insertion_contact_seat_target_rel_x),
+                    "x_servo_gain": float(args.scripted_insertion_contact_seat_x_servo_gain),
+                    "x_servo_direction": float(args.scripted_insertion_contact_seat_x_servo_direction),
+                    "min_step_rel_x": float(args.scripted_insertion_contact_seat_min_step_rel_x),
+                    "max_step_rel_x": float(args.scripted_insertion_contact_seat_max_step_rel_x),
+                    "stop_on_x_regression": bool(
+                        args.scripted_insertion_contact_seat_stop_on_x_regression
+                    ),
+                    "x_regression_tolerance": float(
+                        args.scripted_insertion_contact_seat_x_regression_tolerance
+                    ),
+                    "x_regression_policy": str(args.scripted_insertion_contact_seat_x_regression_policy),
+                    "probe_policy": str(args.scripted_insertion_contact_seat_probe_policy),
+                    "probe_min_x_improvement": float(
+                        args.scripted_insertion_contact_seat_probe_min_x_improvement
+                    ),
+                    "probe_max_lateral_regression": float(
+                        args.scripted_insertion_contact_seat_probe_max_lateral_regression
+                    ),
+                    "probe_require_grasp": bool(args.scripted_insertion_contact_seat_probe_require_grasp),
+                    "lateral_gain": float(args.scripted_insertion_contact_seat_lateral_gain),
+                    "max_lateral_step": float(args.scripted_insertion_contact_seat_max_lateral_step),
+                    "min_servo_steps": int(args.scripted_insertion_contact_seat_min_servo_steps),
+                    "max_servo_l2": float(args.scripted_insertion_contact_seat_max_servo_l2),
+                    "max_servo_steps": int(args.scripted_insertion_contact_seat_max_servo_steps),
+                    "plateau_window": int(args.scripted_insertion_contact_seat_plateau_window),
+                    "plateau_max_l2": float(args.scripted_insertion_contact_seat_plateau_max_l2),
+                    "improvement_epsilon": float(args.scripted_insertion_contact_seat_improvement_epsilon),
+                },
+                "anchor": getattr(args, "scripted_insertion_action_target_anchor", None),
+            },
+            "stop_on_gate_fail": bool(args.scripted_insertion_stop_on_gate_fail),
+            "stop_on_success": bool(args.scripted_insertion_stop_on_success),
+            "once": bool(args.scripted_insertion_once),
+            "post_dp_override": {
+                "action_frame": str(getattr(args, "post_dp_scripted_insertion_action_frame", "")),
+                "max_steps": int(getattr(args, "post_dp_scripted_insertion_max_steps", -1)),
+                "action_target_rel": str(getattr(args, "post_dp_scripted_insertion_action_target_rel", "")),
+                "stop_after_post_dp_scripted_insertion": bool(
+                    getattr(args, "stop_after_post_dp_scripted_insertion", False)
+                ),
+                "boundary": (
+                    "Only used after a live frozen-DP handoff chunk. It lets the "
+                    "automated controller use a different bounded post-DP local "
+                    "finisher from current live state, not a source suffix, saved "
+                    "state replay, or human-selected takeover."
+                ),
+            },
+            "require_grasp": bool(args.scripted_insertion_require_grasp),
+            "axis_only_after_step": int(args.scripted_insertion_axis_only_after_step),
+            "ignore_grasp_after_trigger": bool(args.scripted_insertion_ignore_grasp_after_trigger),
+            "thresholds": {
+                "min_rel_x": float(args.scripted_insertion_min_rel_x),
+                "max_rel_x": float(args.scripted_insertion_max_rel_x),
+                "max_abs_y": float(args.scripted_insertion_max_abs_y),
+                "max_abs_z": float(args.scripted_insertion_max_abs_z),
+                "max_hole_speed": float(args.scripted_insertion_max_hole_speed),
+            },
+            "terminal_pose_gate": {
+                "mode": str(args.scripted_insertion_terminal_pose_gate),
+                "anchor_source_frame": int(args.scripted_insertion_terminal_anchor_source_frame),
+                "anchor": getattr(args, "scripted_insertion_terminal_pose_anchor", None),
+                "thresholds": {
+                    "max_rel_l2": float(args.scripted_insertion_terminal_max_rel_l2),
+                    "max_peg_hole_pos_l2": float(args.scripted_insertion_terminal_max_peg_hole_pos_l2),
+                    "max_peg_hole_rot_rad": float(args.scripted_insertion_terminal_max_peg_hole_rot_rad),
+                    "max_tcp_hole_pos_l2": float(args.scripted_insertion_terminal_max_tcp_hole_pos_l2),
+                    "max_hole_world_pos_l2": float(args.scripted_insertion_terminal_max_hole_world_pos_l2),
+                    "max_hole_world_rot_rad": float(args.scripted_insertion_terminal_max_hole_world_rot_rad),
+                },
+            },
+            "boundary": (
+                "Disabled by default. When enabled, this is a bounded automatic "
+                "local finisher triggered only by a programmed live near-hole "
+                "gate; it is not a human-chosen takeover."
+            ),
+        },
+        "pretrigger_scripted_gate_stop": bool(args.pretrigger_scripted_gate_stop),
         "continuability_thresholds": {
             "min_rel_x": float(args.continuability_min_rel_x),
             "max_rel_x": float(args.continuability_max_rel_x),
@@ -3461,6 +6782,10 @@ def main() -> int:
         "candidate_outcome_scorer_min_progress_delta": float(args.candidate_outcome_scorer_min_progress_delta),
         "candidate_outcome_scorer_min_continuable_prob": float(args.candidate_outcome_scorer_min_continuable_prob),
         "candidate_outcome_scorer_min_inserted_prob": float(args.candidate_outcome_scorer_min_inserted_prob),
+        "candidate_outcome_scorer_min_pred_state_x": float(args.candidate_outcome_scorer_min_pred_state_x),
+        "candidate_outcome_scorer_max_pred_state_x": float(args.candidate_outcome_scorer_max_pred_state_x),
+        "candidate_outcome_scorer_max_pred_state_abs_y": float(args.candidate_outcome_scorer_max_pred_state_abs_y),
+        "candidate_outcome_scorer_max_pred_state_abs_z": float(args.candidate_outcome_scorer_max_pred_state_abs_z),
         "candidate_outcome_scorer_score_state_abs_axis_weights_override": (
             str(args.candidate_outcome_scorer_score_state_abs_axis_weights) or None
         ),
@@ -3482,6 +6807,18 @@ def main() -> int:
         "source_suffix_scenario_match": bool(args.source_suffix_scenario_match),
         "source_suffix_max_distance": float(args.source_suffix_max_distance),
         "source_suffix_ignore_residual_cap": bool(args.source_suffix_ignore_residual_cap),
+        "causal_suffix_diffusion_checkpoint": (
+            str(Path(args.causal_suffix_diffusion_checkpoint).resolve())
+            if str(args.causal_suffix_diffusion_checkpoint).strip()
+            else None
+        ),
+        "causal_suffix_diffusion_offsets": str(args.causal_suffix_diffusion_offsets),
+        "causal_suffix_diffusion_samples_per_offset": int(args.causal_suffix_diffusion_samples_per_offset),
+        "causal_suffix_diffusion_execute_steps": int(args.causal_suffix_diffusion_execute_steps),
+        "causal_suffix_diffusion_temperature": float(args.causal_suffix_diffusion_temperature),
+        "causal_suffix_diffusion_seed_base": int(args.causal_suffix_diffusion_seed_base),
+        "causal_suffix_diffusion_selected_offset": int(args.causal_suffix_diffusion_selected_offset),
+        "causal_suffix_diffusion_selected_sample": int(args.causal_suffix_diffusion_selected_sample),
         "executor_residual_scale": float(args.executor_residual_scale),
         "iterations": [],
     }
@@ -3513,6 +6850,7 @@ def main() -> int:
         contact_executor = None
         candidate_executor = None
         candidate_outcome_scorer = None
+        causal_suffix_diffusion = None
         if args.controller_action_source == "residual_executor":
             residual_executor = load_residual_executor_checkpoint(Path(args.executor_checkpoint), int(args.robot_action_dim))
         elif args.controller_action_source == "contact_executor":
@@ -3535,6 +6873,10 @@ def main() -> int:
                     candidate_outcome_scorer["score_state_target"] = _fixed_width_vector(
                         str(args.candidate_outcome_scorer_score_state_target), 3, 0.0
                     )
+        elif args.controller_action_source == "causal_suffix_diffusion":
+            causal_suffix_diffusion = load_causal_suffix_diffusion_checkpoint(
+                Path(args.causal_suffix_diffusion_checkpoint)
+            )
         if residual_executor is not None:
             summary["residual_executor_checkpoint_metrics"] = residual_executor.get("checkpoint_metrics")
             summary["residual_executor_horizon"] = int(residual_executor["horizon"])
@@ -3547,6 +6889,15 @@ def main() -> int:
             summary["candidate_executor_source_suffix_bank_loaded"] = bool(
                 candidate_executor.get("source_suffix_bank") is not None
             )
+        if causal_suffix_diffusion is not None:
+            causal_metadata = causal_suffix_diffusion.get("metadata") or {}
+            summary["causal_suffix_diffusion_feature_dim"] = int(causal_suffix_diffusion["payload"]["feature_dim"])
+            summary["causal_suffix_diffusion_target_dim"] = int(causal_suffix_diffusion["payload"]["target_dim"])
+            summary["causal_suffix_diffusion_horizon"] = int(causal_metadata.get("horizon", 96))
+            summary["causal_suffix_diffusion_action_dim"] = int(causal_metadata.get("action_dim", 7))
+            summary["causal_suffix_diffusion_offset_values"] = [
+                int(x) for x in causal_metadata.get("offset_values", [])
+            ]
         if candidate_outcome_scorer is not None:
             summary["candidate_outcome_scorer_checkpoint_metrics"] = candidate_outcome_scorer.get("checkpoint_metrics")
             summary["candidate_outcome_scorer_feature_dim"] = int(candidate_outcome_scorer["feature_dim"])
@@ -3604,6 +6955,8 @@ def main() -> int:
             raise ValueError(f"prefix_frame {prefix_frame} outside env state length {len(env_states)}")
 
         iteration = 0
+        scripted_insertion_execution_count = 0
+        post_dp_scripted_insertion_execution_count = 0
         while prefix_frame < args.expected_action_steps and iteration < max(1, int(args.max_receding_iterations)):
             iter_dir = output_root / f"iter_{iteration:02d}_prefix_f{prefix_frame:03d}"
             iter_dir.mkdir(parents=True, exist_ok=True)
@@ -3617,7 +6970,8 @@ def main() -> int:
                 live=last_live,
                 args=args,
             )
-            write_video(prefix_video, observed_frames, args.video_fps)
+            if bool(args.render_live_video):
+                write_video(prefix_video, observed_frames, args.video_fps)
             write_action_json(history_path, history)
 
             iter_record: dict[str, Any] = {
@@ -3625,7 +6979,7 @@ def main() -> int:
                 "prefix_frame_index": prefix_frame,
                 "prefix_role": prefix_role_info["role"],
                 "prefix_role_info": prefix_role_info,
-                "prefix_video": str(prefix_video),
+                "prefix_video": str(prefix_video) if bool(args.render_live_video) else None,
                 "history_action_state": str(history_path),
                 "observed_prefix_frames": len(observed_frames),
                 "prefix_frame_source": args.prefix_frame_source,
@@ -3641,20 +6995,77 @@ def main() -> int:
                     iteration=iteration,
                     label="before_controller",
                 )
-            if not args.run_cosmos_inference:
-                iter_record["dry_run_stop"] = "cosmos_inference_disabled"
-                summary["iterations"].append(iter_record)
-                write_partial_summary(output_root, summary, base_env, prefix_frame, observed_frames)
-                break
-
             pre_gate = continuability_gate(last_live, history, prefix_frame, args)
             iter_record["pre_controller_continuability_gate"] = pre_gate
+            dp_handoff_preferred = bool(pre_gate["ok"]) and int(args.dp_handoff_horizon) > 0
+            scripted_insertion_allowed = (
+                str(args.scripted_insertion_mode) != "disabled"
+                and (
+                    not bool(getattr(args, "scripted_insertion_once", False))
+                    or scripted_insertion_execution_count <= 0
+                )
+            )
+            if scripted_insertion_allowed and not dp_handoff_preferred:
+                scripted_gate = scripted_insertion_gate(last_live, history, prefix_frame, args)
+                iter_record["pre_controller_scripted_insertion_gate"] = scripted_gate
+                if bool(scripted_gate.get("ok", False)):
+                    (
+                        prefix_frame,
+                        previous_hole_xyz,
+                        last_live,
+                        scripted_record,
+                    ) = execute_scripted_insertion_primitive(
+                        env=env,
+                        base_env=base_env,
+                        stack=stack,
+                        env_states=env_states,
+                        args=args,
+                        low=low,
+                        high=high,
+                        history=history,
+                        dp_obs_history=dp_obs_history,
+                        observed_frames=observed_frames,
+                        previous_hole_xyz=previous_hole_xyz,
+                        prefix_frame=prefix_frame,
+                    )
+                    iter_record.update(scripted_record)
+                    if bool(scripted_record.get("scripted_insertion_executed", False)):
+                        scripted_insertion_execution_count += 1
+                    if bool(args.save_live_state_snapshots):
+                        iter_record["live_state_snapshot_after_controller"] = write_live_state_snapshot(
+                            path=iter_dir / "live_state_after_controller.h5",
+                            base_env=base_env,
+                            stack=stack,
+                            prefix_frame=prefix_frame,
+                            iteration=iteration,
+                            label="after_scripted_insertion",
+                        )
+                    summary["iterations"].append(iter_record)
+                    write_partial_summary(output_root, summary, base_env, prefix_frame, observed_frames)
+                    if (
+                        scripted_record.get("terminated_or_truncated")
+                        or (bool((scripted_record.get("after_scripted_insertion_eval") or {}).get("success", False))
+                            and not bool(args.full_episode_rollout))
+                        or prefix_frame >= args.expected_action_steps
+                    ):
+                        break
+                    iteration += 1
+                    continue
             if bool(pre_gate["ok"]) and int(args.dp_handoff_horizon) > 0:
                 iter_record["controller_step_type"] = "frozen_dp_short_chunk"
                 iter_record["dp_handoff_steps"] = []
+                dp_chunk_sequence_raw = semicolon_sequence_item(
+                    getattr(args, "dp_handoff_chunk_horizon_sequence", ""),
+                    iteration,
+                )
                 dp_chunk_limit = (
-                    int(args.dp_handoff_chunk_horizon)
-                    if int(args.dp_handoff_chunk_horizon) > 0
+                    int(dp_chunk_sequence_raw)
+                    if dp_chunk_sequence_raw
+                    else int(args.dp_handoff_chunk_horizon)
+                )
+                dp_chunk_limit = (
+                    int(dp_chunk_limit)
+                    if int(dp_chunk_limit) > 0
                     else int(args.action_exec_horizon)
                 )
                 dp_steps_this_iteration = min(
@@ -3663,6 +7074,9 @@ def main() -> int:
                 )
                 iter_record["dp_handoff_requested_horizon"] = int(args.dp_handoff_horizon)
                 iter_record["dp_handoff_chunk_horizon_config"] = int(args.dp_handoff_chunk_horizon)
+                iter_record["dp_handoff_chunk_horizon_sequence_item"] = (
+                    int(dp_chunk_sequence_raw) if dp_chunk_sequence_raw else None
+                )
                 iter_record["dp_handoff_chunk_horizon"] = int(dp_steps_this_iteration)
                 iter_record["dp_boundary"] = (
                     "Frozen DP is executed only as a short reobserved chunk "
@@ -3680,8 +7094,16 @@ def main() -> int:
                 while len(iter_record["dp_handoff_steps"]) < dp_steps_this_iteration and prefix_frame < args.expected_action_steps:
                     obs_seq = np.stack(dp_obs_history[-2:], axis=0)[None].astype(np.float32)
                     obs_tensor = torch.as_tensor(obs_seq, device=dp_device, dtype=torch.float32)
-                    with torch.no_grad():
-                        action_seq = dp_agent.get_action(obs_tensor)
+                    action_seq, dp_seed_record = dp_get_action_seeded(
+                        dp_agent=dp_agent,
+                        obs_tensor=obs_tensor,
+                        stack=stack,
+                        args=args,
+                        call_site="dp_handoff",
+                        prefix_frame=prefix_frame,
+                        iteration=iteration,
+                        dp_call_index=dp_call_index,
+                    )
                     if getattr(dp_args, "sim_backend", "physx_cpu") == "physx_cpu":
                         action_seq_np = action_seq.detach().cpu().numpy()
                     else:
@@ -3713,13 +7135,14 @@ def main() -> int:
                         previous_hole_xyz = live["hole_xyz"]
                         last_live = live
                         fill_live_history_row(history, prefix_frame, np.asarray(action_record["executed"]), live)
-                        observed_frames.append(_render_frame(env))
+                        append_live_frame(observed_frames, env, args)
                         prefix_frame += 1
                         iter_record["dp_handoff_steps"].append(
                             {
                                 "local_step": len(iter_record["dp_handoff_steps"]),
                                 "global_action_index": prefix_frame - 1,
                                 "dp_call_index": dp_call_index,
+                                "dp_sampling": dp_seed_record,
                                 "chunk_local_step": chunk_local_i,
                                 "action": action_record,
                                 "external_target": external_target,
@@ -3746,6 +7169,108 @@ def main() -> int:
                 iter_record["after_dp_handoff_eval"] = _live_eval(base_env)
                 iter_record["dp_handoff_executed"] = bool(iter_record["dp_handoff_steps"])
                 iter_record["after_dp_handoff_continuability_gate"] = continuability_gate(last_live, history, prefix_frame, args)
+                if (
+                    scripted_insertion_allowed
+                    and not bool(iter_record["after_dp_handoff_eval"].get("success", False))
+                    and not iter_record.get("terminated_or_truncated")
+                    and prefix_frame < args.expected_action_steps
+                ):
+                    post_dp_scripted_args = args
+                    post_dp_frame = semicolon_sequence_item(
+                        getattr(args, "post_dp_scripted_insertion_action_frame_sequence", ""),
+                        post_dp_scripted_insertion_execution_count,
+                    ) or str(getattr(args, "post_dp_scripted_insertion_action_frame", "")).strip()
+                    post_dp_scripted_disabled = post_dp_frame.lower() in {"disabled", "none", "off"}
+                    if post_dp_frame and not post_dp_scripted_disabled:
+                        post_dp_scripted_args = SimpleNamespace(**vars(args))
+                        post_dp_scripted_args.scripted_insertion_action_frame = post_dp_frame
+                        post_dp_max_steps_raw = semicolon_sequence_item(
+                            getattr(args, "post_dp_scripted_insertion_max_steps_sequence", ""),
+                            post_dp_scripted_insertion_execution_count,
+                        )
+                        post_dp_max_steps = (
+                            int(post_dp_max_steps_raw)
+                            if post_dp_max_steps_raw
+                            else int(getattr(args, "post_dp_scripted_insertion_max_steps", -1))
+                        )
+                        if post_dp_max_steps >= 0:
+                            post_dp_scripted_args.scripted_insertion_max_steps = post_dp_max_steps
+                        post_dp_target_rel = semicolon_sequence_item(
+                            getattr(args, "post_dp_scripted_insertion_action_target_rel_sequence", ""),
+                            post_dp_scripted_insertion_execution_count,
+                        ) or str(getattr(args, "post_dp_scripted_insertion_action_target_rel", "")).strip()
+                        if post_dp_target_rel:
+                            post_dp_scripted_args.scripted_insertion_action_target_rel = post_dp_target_rel
+                        iter_record["after_dp_handoff_scripted_insertion_override"] = {
+                            "action_frame": post_dp_frame,
+                            "max_steps": int(post_dp_scripted_args.scripted_insertion_max_steps),
+                            "action_target_rel": str(
+                                getattr(post_dp_scripted_args, "scripted_insertion_action_target_rel", "")
+                            ),
+                            "boundary": (
+                                "Programmed post-DP scripted finisher override. "
+                                "The gate and action are still computed from the "
+                                "current live state; this is not source-suffix "
+                                "replay, saved-state replay, or manual takeover."
+                            ),
+                            "sequence_index": int(post_dp_scripted_insertion_execution_count),
+                        }
+                    if post_dp_scripted_disabled:
+                        scripted_gate = {
+                            "ok": False,
+                            "disabled": True,
+                            "reason": "post_dp_scripted_insertion_disabled",
+                            "boundary": (
+                                "Programmed post-DP scripted finisher disable. "
+                                "Frozen DP owns the local finish after the live "
+                                "handoff gate; no teacher/scripted action is "
+                                "executed after DP."
+                            ),
+                        }
+                        iter_record["after_dp_handoff_scripted_insertion_override"] = {
+                            "action_frame": post_dp_frame,
+                            "disabled": True,
+                        }
+                    else:
+                        scripted_gate = scripted_insertion_gate(last_live, history, prefix_frame, post_dp_scripted_args)
+                    iter_record["after_dp_handoff_scripted_insertion_gate"] = scripted_gate
+                    if bool(scripted_gate.get("ok", False)):
+                        (
+                            prefix_frame,
+                            previous_hole_xyz,
+                            last_live,
+                            scripted_record,
+                        ) = execute_scripted_insertion_primitive(
+                            env=env,
+                            base_env=base_env,
+                            stack=stack,
+                            env_states=env_states,
+                            args=post_dp_scripted_args,
+                            low=low,
+                            high=high,
+                            history=history,
+                            dp_obs_history=dp_obs_history,
+                            observed_frames=observed_frames,
+                            previous_hole_xyz=previous_hole_xyz,
+                            prefix_frame=prefix_frame,
+                        )
+                        iter_record.update(scripted_record)
+                        if bool(scripted_record.get("scripted_insertion_executed", False)):
+                            scripted_insertion_execution_count += 1
+                            post_dp_scripted_insertion_execution_count += 1
+                        if scripted_record.get("terminated_or_truncated"):
+                            iter_record["terminated_or_truncated"] = True
+                            iter_record["stop_reason"] = "terminated_or_truncated_after_scripted_insertion"
+                        elif bool((scripted_record.get("after_scripted_insertion_eval") or {}).get("success", False)):
+                            iter_record["live_success_observed_after_scripted_insertion"] = True
+                            if not bool(args.full_episode_rollout):
+                                iter_record["stop_reason"] = "live_success_after_scripted_insertion"
+                        elif (
+                            bool(scripted_record.get("scripted_insertion_executed", False))
+                            and bool(getattr(args, "stop_after_post_dp_scripted_insertion", False))
+                            and not bool(args.full_episode_rollout)
+                        ):
+                            iter_record["stop_reason"] = "stop_after_post_dp_scripted_insertion"
                 if bool(args.save_live_state_snapshots):
                     iter_record["live_state_snapshot_after_controller"] = write_live_state_snapshot(
                         path=iter_dir / "live_state_after_controller.h5",
@@ -3753,17 +7278,193 @@ def main() -> int:
                         stack=stack,
                         prefix_frame=prefix_frame,
                         iteration=iteration,
-                        label="after_dp_handoff",
+                        label=(
+                            "after_scripted_insertion"
+                            if iter_record.get("scripted_insertion_executed")
+                            else "after_dp_handoff"
+                        ),
                     )
                 summary["iterations"].append(iter_record)
                 write_partial_summary(output_root, summary, base_env, prefix_frame, observed_frames)
                 if (
-                    iter_record.get("terminated_or_truncated")
+                    iter_record.get("stop_reason")
+                    or iter_record.get("terminated_or_truncated")
                     or prefix_frame >= args.expected_action_steps
                 ):
                     break
                 iteration += 1
                 continue
+
+            if args.controller_action_source == "causal_suffix_diffusion":
+                if causal_suffix_diffusion is None:
+                    raise RuntimeError("causal suffix diffusion checkpoint was not loaded")
+                iter_record["controller_step_type"] = "causal_suffix_diffusion_short_chunk"
+                executor_chunk = causal_suffix_diffusion_action_chunk(
+                    diffusion=causal_suffix_diffusion,
+                    live=last_live,
+                    prefix_frame=prefix_frame,
+                    iteration=iteration,
+                    args=args,
+                )
+                if not bool(executor_chunk.get("ok", False)):
+                    raise RuntimeError(f"causal suffix diffusion produced invalid action chunk: {executor_chunk}")
+                executor_json = iter_dir / "causal_suffix_diffusion_action_chunk.json"
+                write_json(executor_json, executor_chunk)
+                iter_record["causal_suffix_diffusion_action_chunk_json"] = str(executor_json)
+                iter_record["causal_suffix_diffusion_selected_candidate_name"] = executor_chunk.get(
+                    "selected_candidate_name"
+                )
+                iter_record["causal_suffix_diffusion_selected_offset"] = executor_chunk.get("selected_offset")
+                iter_record["causal_suffix_diffusion_selected_sample_index"] = executor_chunk.get(
+                    "selected_sample_index"
+                )
+                iter_record["causal_suffix_diffusion_selected_seed"] = executor_chunk.get("selected_seed")
+                iter_record["causal_suffix_diffusion_action_stats"] = executor_chunk.get("selected_action_stats")
+                iter_record["causal_suffix_diffusion_candidate_count"] = len(executor_chunk.get("candidates") or [])
+                iter_record["causal_suffix_diffusion_boundary"] = executor_chunk.get("boundary")
+                actions = executor_chunk.get("denormalized_robot_action_chunk") or []
+                iter_record["executed_steps"] = []
+                iter_record["step_continuability_gates"] = []
+                for local_i, action in enumerate(actions):
+                    if prefix_frame >= args.expected_action_steps:
+                        break
+                    step_action, action_record = _prepare_step_action(action, low, high, bool(args.clip_live_actions))
+                    obs, reward, terminated, truncated, info = env.step(step_action)
+                    external_target = apply_external_target_pose(
+                        base_env=base_env,
+                        stack=stack,
+                        env_states=env_states,
+                        source_frame=prefix_frame + 1,
+                        args=args,
+                    )
+                    current_state_obs = read_state_obs(base_env, stack)
+                    dp_obs_history.append(current_state_obs.copy())
+                    live = live_pose_row(base_env, stack, previous_hole_xyz)
+                    previous_hole_xyz = live["hole_xyz"]
+                    last_live = live
+                    fill_live_history_row(history, prefix_frame, np.asarray(action_record["executed"]), live)
+                    append_live_frame(observed_frames, env, args)
+                    prefix_frame += 1
+                    step_record = {
+                        "local_step": local_i,
+                        "global_action_index": prefix_frame - 1,
+                        "action": action_record,
+                        "external_target": external_target,
+                        "reward": jsonable(reward),
+                        "terminated": jsonable(terminated),
+                        "truncated": jsonable(truncated),
+                        "live_eval": _live_eval(base_env),
+                    }
+                    if bool(args.cosmos_step_handoff_gate) and int(args.dp_handoff_horizon) > 0:
+                        step_gate = continuability_gate(last_live, history, prefix_frame, args)
+                        step_record["continuability_gate_after_step"] = step_gate
+                        iter_record["step_continuability_gates"].append(
+                            {
+                                "local_step": local_i,
+                                "global_action_index": prefix_frame - 1,
+                                "gate": step_gate,
+                            }
+                        )
+                    iter_record["executed_steps"].append(step_record)
+                    if bool(np.asarray(terminated).any()) or bool(np.asarray(truncated).any()):
+                        iter_record["terminated_or_truncated"] = True
+                        break
+                    if (
+                        bool(args.cosmos_step_handoff_gate)
+                        and int(args.dp_handoff_horizon) > 0
+                        and bool(step_record.get("continuability_gate_after_step", {}).get("ok", False))
+                    ):
+                        iter_record["cosmos_chunk_stop_reason"] = "step_level_continuability_gate_ok"
+                        iter_record["step_level_handoff_ready"] = True
+                        break
+                iter_record["after_eval"] = _live_eval(base_env)
+                dp_handoff_ready_next = bool(
+                    iter_record.get("step_level_handoff_ready")
+                    and int(args.dp_handoff_horizon) > 0
+                )
+                if (
+                    scripted_insertion_allowed
+                    and not bool(iter_record["after_eval"].get("success", False))
+                    and not bool(iter_record.get("terminated_or_truncated", False))
+                    and not dp_handoff_ready_next
+                    and prefix_frame < args.expected_action_steps
+                ):
+                    scripted_gate = scripted_insertion_gate(last_live, history, prefix_frame, args)
+                    iter_record["post_controller_scripted_insertion_gate"] = scripted_gate
+                    if bool(scripted_gate.get("ok", False)):
+                        (
+                            prefix_frame,
+                            previous_hole_xyz,
+                            last_live,
+                            scripted_record,
+                        ) = execute_scripted_insertion_primitive(
+                            env=env,
+                            base_env=base_env,
+                            stack=stack,
+                            env_states=env_states,
+                            args=args,
+                            low=low,
+                            high=high,
+                            history=history,
+                            dp_obs_history=dp_obs_history,
+                            observed_frames=observed_frames,
+                            previous_hole_xyz=previous_hole_xyz,
+                            prefix_frame=prefix_frame,
+                        )
+                        iter_record.update(scripted_record)
+                        if bool(scripted_record.get("scripted_insertion_executed", False)):
+                            scripted_insertion_execution_count += 1
+                        iter_record["after_eval"] = _live_eval(base_env)
+                        if scripted_record.get("terminated_or_truncated"):
+                            iter_record["terminated_or_truncated"] = True
+                            iter_record["stop_reason"] = "terminated_or_truncated_after_scripted_insertion"
+                        elif bool((scripted_record.get("after_scripted_insertion_eval") or {}).get("success", False)):
+                            iter_record["live_success_observed_after_scripted_insertion"] = True
+                            if not bool(args.full_episode_rollout):
+                                iter_record["stop_reason"] = "live_success_after_scripted_insertion"
+                if bool(args.save_live_state_snapshots):
+                    iter_record["live_state_snapshot_after_controller"] = write_live_state_snapshot(
+                        path=iter_dir / "live_state_after_controller.h5",
+                        base_env=base_env,
+                        stack=stack,
+                        prefix_frame=prefix_frame,
+                        iteration=iteration,
+                        label=(
+                            "after_scripted_insertion"
+                            if iter_record.get("scripted_insertion_executed")
+                            else "after_causal_suffix_diffusion_chunk"
+                        ),
+                    )
+                if iter_record["after_eval"].get("success") and not iter_record.get("scripted_insertion_executed"):
+                    iter_record["live_success_observed_after_causal_suffix_diffusion_chunk"] = True
+                    if not bool(args.full_episode_rollout):
+                        iter_record["stop_reason"] = "live_success_after_causal_suffix_diffusion_chunk"
+                if iter_record.get("terminated_or_truncated"):
+                    iter_record["stop_reason"] = "terminated_or_truncated_after_causal_suffix_diffusion_chunk"
+                iter_record["dp_handoff_executed"] = False
+                iter_record["post_controller_continuability_gate"] = continuability_gate(
+                    last_live,
+                    history,
+                    prefix_frame,
+                    args,
+                )
+                summary["iterations"].append(iter_record)
+                write_partial_summary(output_root, summary, base_env, prefix_frame, observed_frames)
+                if (
+                    iter_record.get("stop_reason")
+                    or iter_record.get("terminated_or_truncated")
+                    or prefix_frame >= args.expected_action_steps
+                ):
+                    break
+                iteration += 1
+                continue
+
+            if not args.run_cosmos_inference:
+                iter_record["dry_run_stop"] = "cosmos_inference_disabled_after_live_finisher_gates"
+                iter_record["controller_step_type"] = "no_cosmos_after_live_finisher_gates"
+                summary["iterations"].append(iter_record)
+                write_partial_summary(output_root, summary, base_env, prefix_frame, observed_frames)
+                break
 
             iter_record["controller_step_type"] = (
                 "residual_executor_short_chunk"
@@ -3812,6 +7513,10 @@ def main() -> int:
                     dp_obs_history=dp_obs_history,
                     stack=stack,
                     horizon=executor_horizon,
+                    args=args,
+                    prefix_frame=prefix_frame,
+                    iteration=iteration,
+                    dp_call_index=0,
                 )
                 current_state = current_executor_state_from_live(base_env, stack, last_live)
                 executor_chunk = residual_executor_action_chunk(
@@ -3834,6 +7539,7 @@ def main() -> int:
                             if key != "task_path"
                         },
                         "prefix_frame_index": int(prefix_frame),
+                        "dp_prior_sampling": getattr(dp_prior_chunk_from_agent, "last_seed_record", None),
                         "raw_cosmos_action_chunk_json": str(iter_dir / "cosmos_live_prefix" / "live_prefix_action_chunk.json"),
                     },
                 )
@@ -3867,6 +7573,10 @@ def main() -> int:
                     dp_obs_history=dp_obs_history,
                     stack=stack,
                     horizon=executor_horizon,
+                    args=args,
+                    prefix_frame=prefix_frame,
+                    iteration=iteration,
+                    dp_call_index=0,
                 )
                 current_state = current_executor_state_from_live(base_env, stack, last_live)
                 executor_chunk = contact_executor_action_chunk(
@@ -3893,6 +7603,7 @@ def main() -> int:
                             if key != "task_path"
                         },
                         "prefix_frame_index": int(prefix_frame),
+                        "dp_prior_sampling": getattr(dp_prior_chunk_from_agent, "last_seed_record", None),
                         "raw_cosmos_action_chunk_json": str(iter_dir / "cosmos_live_prefix" / "live_prefix_action_chunk.json"),
                     },
                 )
@@ -3930,6 +7641,10 @@ def main() -> int:
                     dp_obs_history=dp_obs_history,
                     stack=stack,
                     horizon=executor_horizon,
+                    args=args,
+                    prefix_frame=prefix_frame,
+                    iteration=iteration,
+                    dp_call_index=0,
                 )
                 current_state = current_executor_state_from_live(base_env, stack, last_live)
                 executor_chunk = candidate_executor_action_chunk(
@@ -3965,6 +7680,7 @@ def main() -> int:
                             if key != "task_path"
                         },
                         "prefix_frame_index": int(prefix_frame),
+                        "dp_prior_sampling": getattr(dp_prior_chunk_from_agent, "last_seed_record", None),
                         "raw_cosmos_action_chunk_json": str(iter_dir / "cosmos_live_prefix" / "live_prefix_action_chunk.json"),
                     },
                 )
@@ -4010,7 +7726,7 @@ def main() -> int:
                 previous_hole_xyz = live["hole_xyz"]
                 last_live = live
                 fill_live_history_row(history, prefix_frame, np.asarray(action_record["executed"]), live)
-                observed_frames.append(_render_frame(env))
+                append_live_frame(observed_frames, env, args)
                 prefix_frame += 1
                 step_record = {
                     "local_step": local_i,
@@ -4045,6 +7761,50 @@ def main() -> int:
                     iter_record["step_level_handoff_ready"] = True
                     break
             iter_record["after_eval"] = _live_eval(base_env)
+            dp_handoff_ready_next = bool(
+                iter_record.get("step_level_handoff_ready")
+                and int(args.dp_handoff_horizon) > 0
+            )
+            if (
+                scripted_insertion_allowed
+                and not bool(iter_record["after_eval"].get("success", False))
+                and not bool(iter_record.get("terminated_or_truncated", False))
+                and not dp_handoff_ready_next
+                and prefix_frame < args.expected_action_steps
+            ):
+                scripted_gate = scripted_insertion_gate(last_live, history, prefix_frame, args)
+                iter_record["post_controller_scripted_insertion_gate"] = scripted_gate
+                if bool(scripted_gate.get("ok", False)):
+                    (
+                        prefix_frame,
+                        previous_hole_xyz,
+                        last_live,
+                        scripted_record,
+                    ) = execute_scripted_insertion_primitive(
+                        env=env,
+                        base_env=base_env,
+                        stack=stack,
+                        env_states=env_states,
+                        args=args,
+                        low=low,
+                        high=high,
+                        history=history,
+                        dp_obs_history=dp_obs_history,
+                        observed_frames=observed_frames,
+                        previous_hole_xyz=previous_hole_xyz,
+                        prefix_frame=prefix_frame,
+                    )
+                    iter_record.update(scripted_record)
+                    if bool(scripted_record.get("scripted_insertion_executed", False)):
+                        scripted_insertion_execution_count += 1
+                    iter_record["after_eval"] = _live_eval(base_env)
+                    if scripted_record.get("terminated_or_truncated"):
+                        iter_record["terminated_or_truncated"] = True
+                        iter_record["stop_reason"] = "terminated_or_truncated_after_scripted_insertion"
+                    elif bool((scripted_record.get("after_scripted_insertion_eval") or {}).get("success", False)):
+                        iter_record["live_success_observed_after_scripted_insertion"] = True
+                        if not bool(args.full_episode_rollout):
+                            iter_record["stop_reason"] = "live_success_after_scripted_insertion"
             if bool(args.save_live_state_snapshots):
                 iter_record["live_state_snapshot_after_controller"] = write_live_state_snapshot(
                     path=iter_dir / "live_state_after_controller.h5",
@@ -4052,9 +7812,13 @@ def main() -> int:
                     stack=stack,
                     prefix_frame=prefix_frame,
                     iteration=iteration,
-                    label="after_cosmos_chunk",
+                    label=(
+                        "after_scripted_insertion"
+                        if iter_record.get("scripted_insertion_executed")
+                        else "after_cosmos_chunk"
+                    ),
                 )
-            if iter_record["after_eval"].get("success"):
+            if iter_record["after_eval"].get("success") and not iter_record.get("scripted_insertion_executed"):
                 iter_record["live_success_observed_after_cosmos_chunk"] = True
                 if not bool(args.full_episode_rollout):
                     iter_record["stop_reason"] = "live_success_after_cosmos_chunk"
@@ -4079,14 +7843,54 @@ def main() -> int:
                 break
             iteration += 1
 
-        final_observed_video = output_root / "live_observed_rollout.mp4"
-        write_video(final_observed_video, observed_frames, args.video_fps)
-        summary["final_observed_video"] = str(final_observed_video)
-        summary["final_observed_video_inspection"] = inspect_video_file(final_observed_video)
+        oracle_final_seat_demo = maybe_apply_oracle_final_seat_demo(
+            env=env,
+            base_env=base_env,
+            env_states=env_states,
+            args=args,
+            observed_frames=observed_frames,
+        )
+        if oracle_final_seat_demo is not None:
+            summary["oracle_final_seat_demo"] = oracle_final_seat_demo
+            summary["method_evidence_allowed"] = False
+            summary["artifact_role"] = "oracle_manual_final_seat_demo"
+
+        live_geometric_final_seat_demo = maybe_apply_live_geometric_final_seat_demo(
+            env=env,
+            base_env=base_env,
+            stack=stack,
+            args=args,
+            observed_frames=observed_frames,
+        )
+        if live_geometric_final_seat_demo is not None:
+            summary["live_geometric_final_seat_demo"] = live_geometric_final_seat_demo
+            summary["method_evidence_allowed"] = False
+            summary["artifact_role"] = "live_geometric_final_seat_smoke"
+
+        if bool(args.render_live_video):
+            final_observed_video = output_root / "live_observed_rollout.mp4"
+            write_video(final_observed_video, observed_frames, args.video_fps)
+            summary["final_observed_video"] = str(final_observed_video)
+            summary["final_observed_video_inspection"] = inspect_video_file(final_observed_video)
+        else:
+            summary["final_observed_video"] = None
+            summary["final_observed_video_inspection"] = {
+                "exists": False,
+                "error": "render_live_video_disabled",
+                "path": None,
+            }
         summary["final_observed_frames"] = len(observed_frames)
         summary["final_eval"] = _live_eval(base_env)
         summary["final_prefix_frame_index"] = prefix_frame
         summary["completed_iterations"] = len(summary["iterations"])
+        summary["scripted_insertion_executed_steps"] = sum(
+            len(iteration.get("scripted_insertion_steps") or [])
+            for iteration in summary["iterations"]
+        )
+        summary["dp_handoff_executed_steps"] = sum(
+            len(iteration.get("dp_handoff_steps") or [])
+            for iteration in summary["iterations"]
+        )
         summary["full_episode_length_ok"] = bool(
             prefix_frame >= args.expected_action_steps
             and len(observed_frames) == args.expected_video_frames
@@ -4107,7 +7911,7 @@ def main() -> int:
             summary["controller_frame_counts"][controller] = summary["controller_frame_counts"].get(controller, 0) + 1
         summary["wm_active_frame_count"] = sum(1 for meta in summary["controller_timeline"] if meta.get("wm_active"))
         summary["dp_active_frame_count"] = sum(1 for meta in summary["controller_timeline"] if meta.get("dp_active"))
-        if bool(args.annotate_video):
+        if bool(args.annotate_video) and bool(args.render_live_video):
             annotated_video = output_root / "live_observed_rollout_annotated.mp4"
             annotation_summary = write_annotated_video(
                 annotated_video,
@@ -4119,12 +7923,19 @@ def main() -> int:
             summary["final_observed_annotated_video"] = str(annotated_video)
             summary["final_observed_annotated_video_inspection"] = annotation_summary.get("video_inspection")
         inspections = [summary.get("final_observed_video_inspection")]
-        if bool(args.annotate_video):
+        if bool(args.annotate_video) and bool(args.render_live_video):
             inspections.append(summary.get("final_observed_annotated_video_inspection"))
+        elif bool(args.annotate_video):
+            summary["final_observed_annotated_video"] = None
+            summary["final_observed_annotated_video_inspection"] = {
+                "exists": False,
+                "error": "render_live_video_disabled",
+                "path": None,
+            }
         summary["video_file_contract_ok"] = video_inspections_match_contract(
             inspections,
             expected_video_frames=int(args.expected_video_frames),
-            expected_inspection_count=2 if bool(args.annotate_video) else 1,
+            expected_inspection_count=2 if (bool(args.annotate_video) and bool(args.render_live_video)) else 1,
         )
         write_json(output_root / "live_receding_loop_summary.json", summary)
         print(json.dumps({"summary": str(output_root / "live_receding_loop_summary.json")}, sort_keys=True))

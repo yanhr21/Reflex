@@ -79,11 +79,149 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-exec-horizon", type=int, default=8)
     parser.add_argument("--dp-handoff-horizon", type=int, default=32)
     parser.add_argument("--dp-handoff-chunk-horizon", type=int, default=0)
+    parser.add_argument("--dp-action-seed-base", type=int, default=-1)
     parser.add_argument("--cosmos-step-handoff-gate", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--scripted-insertion-mode",
+        choices=("disabled", "near_hole_gate"),
+        default="disabled",
+    )
+    parser.add_argument("--scripted-insertion-action", default="0.004,0,0,0,0,0,-1")
+    parser.add_argument("--scripted-insertion-max-steps", type=int, default=8)
+    parser.add_argument("--scripted-insertion-min-rel-x", type=float, default=-0.04)
+    parser.add_argument("--scripted-insertion-max-rel-x", type=float, default=0.03)
+    parser.add_argument("--scripted-insertion-max-abs-y", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-abs-z", type=float, default=0.018)
+    parser.add_argument("--scripted-insertion-max-hole-speed", type=float, default=0.01)
+    parser.add_argument(
+        "--scripted-insertion-terminal-pose-gate",
+        choices=("disabled", "source_anchor"),
+        default="disabled",
+    )
+    parser.add_argument("--scripted-insertion-terminal-anchor-source-frame", type=int, default=165)
+    parser.add_argument("--scripted-insertion-terminal-max-rel-l2", type=float, default=0.01)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-pos-l2", type=float, default=0.02)
+    parser.add_argument("--scripted-insertion-terminal-max-peg-hole-rot-rad", type=float, default=0.20)
+    parser.add_argument("--scripted-insertion-terminal-max-tcp-hole-pos-l2", type=float, default=0.08)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-pos-l2", type=float, default=0.05)
+    parser.add_argument("--scripted-insertion-terminal-max-hole-world-rot-rad", type=float, default=0.05)
+    parser.add_argument("--scripted-insertion-require-grasp", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--scripted-insertion-stop-on-gate-fail", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--scripted-insertion-action-frame",
+        choices=(
+            "fixed",
+            "hole_frame_servo",
+            "hole_frame_servo_keep_tail",
+            "hole_frame_anchor_servo",
+            "hole_frame_anchor_servo_keep_tail",
+            "hole_frame_adaptive_anchor_servo_keep_tail",
+            "hole_frame_peg_pose_servo",
+            "hole_frame_peg_pose_servo_keep_tail",
+            "hole_frame_peg_pose_rot_servo_keep_gripper",
+            "teacher_table_nearest_action",
+            "teacher_table_nearest_action_keep_tail",
+        ),
+        default="fixed",
+    )
+    parser.add_argument("--scripted-insertion-step-rel-x", type=float, default=0.32)
+    parser.add_argument("--scripted-insertion-lateral-gain", type=float, default=10.0)
+    parser.add_argument("--scripted-insertion-max-lateral-step", type=float, default=0.12)
+    parser.add_argument("--scripted-insertion-action-target-source-frame", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-teacher-table-jsonl", default="")
+    parser.add_argument("--scripted-insertion-teacher-table-k", type=int, default=1)
+    parser.add_argument("--scripted-insertion-teacher-table-min-offset", type=int, default=1)
+    parser.add_argument("--scripted-insertion-teacher-table-max-offset", type=int, default=48)
+    parser.add_argument("--scripted-insertion-teacher-table-query-weights", default="1,2,4")
+    parser.add_argument("--scripted-insertion-teacher-table-max-distance", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-teacher-table-min-action-x", type=float, default=-1.0e9)
+    parser.add_argument("--scripted-insertion-teacher-table-max-action-x", type=float, default=1.0e9)
+    parser.add_argument("--scripted-insertion-teacher-table-action-x-floor", type=float, default=float("nan"))
+    parser.add_argument(
+        "--scripted-insertion-teacher-table-scenario-match",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--scripted-insertion-action-target-gain", type=float, default=10.0)
+    parser.add_argument("--scripted-insertion-action-target-rot-gain", type=float, default=3.0)
+    parser.add_argument("--scripted-insertion-action-target-rot-cap", type=float, default=0.35)
+    parser.add_argument(
+        "--scripted-insertion-action-target-rot-source",
+        choices=("peg", "tcp"),
+        default="peg",
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-target-l2", type=float, default=-1.0)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-latch",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-step-rel-x", type=float, default=0.06)
+    parser.add_argument("--scripted-insertion-contact-seat-x-servo", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--scripted-insertion-contact-seat-target-rel-x", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-contact-seat-x-servo-gain", type=float, default=8.0)
+    parser.add_argument("--scripted-insertion-contact-seat-x-servo-direction", type=float, default=1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-min-step-rel-x", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-step-rel-x", type=float, default=-1.0)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-stop-on-x-regression",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-x-regression-tolerance", type=float, default=0.0005)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-x-regression-policy",
+        choices=("stop", "disable_contact_seat_continue"),
+        default="stop",
+    )
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-probe-policy",
+        choices=("disabled", "disable_on_nonimprovement", "flip_once_on_nonimprovement"),
+        default="disabled",
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-probe-min-x-improvement", type=float, default=0.0001)
+    parser.add_argument("--scripted-insertion-contact-seat-probe-max-lateral-regression", type=float, default=0.0002)
+    parser.add_argument(
+        "--scripted-insertion-contact-seat-probe-require-grasp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument("--scripted-insertion-contact-seat-lateral-gain", type=float, default=0.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-lateral-step", type=float, default=0.02)
+    parser.add_argument("--scripted-insertion-contact-seat-min-servo-steps", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-contact-seat-max-servo-l2", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-max-servo-steps", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-contact-seat-plateau-window", type=int, default=0)
+    parser.add_argument("--scripted-insertion-contact-seat-plateau-max-l2", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-contact-seat-improvement-epsilon", type=float, default=0.0005)
+    parser.add_argument(
+        "--scripted-insertion-anchor-stop-on-target-regression",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--scripted-insertion-anchor-regression-tolerance", type=float, default=0.0005)
+    parser.add_argument("--scripted-insertion-adaptive-flip-axes", default="")
+    parser.add_argument("--scripted-insertion-lateral-sign", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-z-sign", type=float, default=-1.0)
+    parser.add_argument("--scripted-insertion-axis-only-after-step", type=int, default=-1)
+    parser.add_argument("--scripted-insertion-ignore-grasp-after-trigger", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--oracle-final-seat-mode",
+        choices=("disabled", "source_state"),
+        default="disabled",
+    )
+    parser.add_argument("--oracle-final-seat-source-frame", type=int, default=300)
+    parser.add_argument(
+        "--live-geometric-final-seat-mode",
+        choices=("disabled", "peg_head_to_hole"),
+        default="disabled",
+    )
+    parser.add_argument("--live-geometric-final-seat-target-rel", default="-0.006,0,0")
     parser.add_argument("--continuability-stats-json", default="")
     parser.add_argument("--continuability-stats-horizon", type=int, default=32)
     parser.add_argument("--external-target-mode", choices=("source_env_state", "none"), default="source_env_state")
     parser.add_argument("--run-cosmos-inference", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--render-live-video", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--controller-action-source",
         choices=("cosmos_robot_action", "residual_executor", "contact_executor", "candidate_executor"),
@@ -95,9 +233,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-outcome-scorer-min-progress-delta", type=float, default=-1.0e9)
     parser.add_argument("--candidate-outcome-scorer-min-continuable-prob", type=float, default=0.0)
     parser.add_argument("--candidate-outcome-scorer-min-inserted-prob", type=float, default=0.0)
+    parser.add_argument("--candidate-outcome-scorer-min-pred-state-x", type=float, default=-1.0e9)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-x", type=float, default=1.0e9)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-abs-y", type=float, default=-1.0)
+    parser.add_argument("--candidate-outcome-scorer-max-pred-state-abs-z", type=float, default=-1.0)
     parser.add_argument("--candidate-outcome-scorer-score-state-abs-axis-weights", default="")
     parser.add_argument("--candidate-outcome-scorer-score-state-target", default="")
     parser.add_argument("--candidate-executor-short-prefix-steps", default="")
+    parser.add_argument(
+        "--candidate-executor-allow-dp-prior-before-gate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--source-insertion-suffix-bank", default="")
     parser.add_argument("--source-suffix-k", type=int, default=0)
     parser.add_argument("--source-suffix-blends", default="1.0")
@@ -114,6 +261,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-live-state-snapshots", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--save-candidate-action-bank", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--live-progress-interval", type=int, default=0)
+    parser.add_argument("--pretrigger-debug-steps", type=int, default=3)
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--expected-video-frames", type=int, default=301)
     parser.add_argument("--expected-action-steps", type=int, default=300)
@@ -260,9 +408,175 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
         str(args.dp_handoff_horizon),
         "--dp-handoff-chunk-horizon",
         str(args.dp_handoff_chunk_horizon),
+        "--dp-action-seed-base",
+        str(args.dp_action_seed_base),
         "--cosmos-step-handoff-gate" if args.cosmos_step_handoff_gate else "--no-cosmos-step-handoff-gate",
+        "--scripted-insertion-mode",
+        args.scripted_insertion_mode,
+        f"--scripted-insertion-action={args.scripted_insertion_action}",
+        "--scripted-insertion-action-frame",
+        args.scripted_insertion_action_frame,
+        "--scripted-insertion-step-rel-x",
+        str(args.scripted_insertion_step_rel_x),
+        "--scripted-insertion-lateral-gain",
+        str(args.scripted_insertion_lateral_gain),
+        "--scripted-insertion-max-lateral-step",
+        str(args.scripted_insertion_max_lateral_step),
+        "--scripted-insertion-action-target-source-frame",
+        str(args.scripted_insertion_action_target_source_frame),
+        "--scripted-insertion-teacher-table-jsonl",
+        str(args.scripted_insertion_teacher_table_jsonl),
+        "--scripted-insertion-teacher-table-k",
+        str(args.scripted_insertion_teacher_table_k),
+        "--scripted-insertion-teacher-table-min-offset",
+        str(args.scripted_insertion_teacher_table_min_offset),
+        "--scripted-insertion-teacher-table-max-offset",
+        str(args.scripted_insertion_teacher_table_max_offset),
+        "--scripted-insertion-teacher-table-query-weights",
+        str(args.scripted_insertion_teacher_table_query_weights),
+        "--scripted-insertion-teacher-table-max-distance",
+        str(args.scripted_insertion_teacher_table_max_distance),
+        "--scripted-insertion-teacher-table-min-action-x",
+        str(args.scripted_insertion_teacher_table_min_action_x),
+        "--scripted-insertion-teacher-table-max-action-x",
+        str(args.scripted_insertion_teacher_table_max_action_x),
+        "--scripted-insertion-teacher-table-action-x-floor",
+        str(args.scripted_insertion_teacher_table_action_x_floor),
+        (
+            "--scripted-insertion-teacher-table-scenario-match"
+            if args.scripted_insertion_teacher_table_scenario_match
+            else "--no-scripted-insertion-teacher-table-scenario-match"
+        ),
+        "--scripted-insertion-action-target-gain",
+        str(args.scripted_insertion_action_target_gain),
+        "--scripted-insertion-action-target-rot-gain",
+        str(args.scripted_insertion_action_target_rot_gain),
+        "--scripted-insertion-action-target-rot-cap",
+        str(args.scripted_insertion_action_target_rot_cap),
+        "--scripted-insertion-action-target-rot-source",
+        str(args.scripted_insertion_action_target_rot_source),
+        "--scripted-insertion-contact-seat-target-l2",
+        str(args.scripted_insertion_contact_seat_target_l2),
+        (
+            "--scripted-insertion-contact-seat-latch"
+            if args.scripted_insertion_contact_seat_latch
+            else "--no-scripted-insertion-contact-seat-latch"
+        ),
+        "--scripted-insertion-contact-seat-step-rel-x",
+        str(args.scripted_insertion_contact_seat_step_rel_x),
+        (
+            "--scripted-insertion-contact-seat-x-servo"
+            if args.scripted_insertion_contact_seat_x_servo
+            else "--no-scripted-insertion-contact-seat-x-servo"
+        ),
+        "--scripted-insertion-contact-seat-target-rel-x",
+        str(args.scripted_insertion_contact_seat_target_rel_x),
+        "--scripted-insertion-contact-seat-x-servo-gain",
+        str(args.scripted_insertion_contact_seat_x_servo_gain),
+        "--scripted-insertion-contact-seat-x-servo-direction",
+        str(args.scripted_insertion_contact_seat_x_servo_direction),
+        "--scripted-insertion-contact-seat-min-step-rel-x",
+        str(args.scripted_insertion_contact_seat_min_step_rel_x),
+        "--scripted-insertion-contact-seat-max-step-rel-x",
+        str(args.scripted_insertion_contact_seat_max_step_rel_x),
+        (
+            "--scripted-insertion-contact-seat-stop-on-x-regression"
+            if args.scripted_insertion_contact_seat_stop_on_x_regression
+            else "--no-scripted-insertion-contact-seat-stop-on-x-regression"
+        ),
+        "--scripted-insertion-contact-seat-x-regression-tolerance",
+        str(args.scripted_insertion_contact_seat_x_regression_tolerance),
+        "--scripted-insertion-contact-seat-x-regression-policy",
+        str(args.scripted_insertion_contact_seat_x_regression_policy),
+        "--scripted-insertion-contact-seat-probe-policy",
+        str(args.scripted_insertion_contact_seat_probe_policy),
+        "--scripted-insertion-contact-seat-probe-min-x-improvement",
+        str(args.scripted_insertion_contact_seat_probe_min_x_improvement),
+        "--scripted-insertion-contact-seat-probe-max-lateral-regression",
+        str(args.scripted_insertion_contact_seat_probe_max_lateral_regression),
+        (
+            "--scripted-insertion-contact-seat-probe-require-grasp"
+            if args.scripted_insertion_contact_seat_probe_require_grasp
+            else "--no-scripted-insertion-contact-seat-probe-require-grasp"
+        ),
+        "--scripted-insertion-contact-seat-lateral-gain",
+        str(args.scripted_insertion_contact_seat_lateral_gain),
+        "--scripted-insertion-contact-seat-max-lateral-step",
+        str(args.scripted_insertion_contact_seat_max_lateral_step),
+        "--scripted-insertion-contact-seat-min-servo-steps",
+        str(args.scripted_insertion_contact_seat_min_servo_steps),
+        "--scripted-insertion-contact-seat-max-servo-l2",
+        str(args.scripted_insertion_contact_seat_max_servo_l2),
+        "--scripted-insertion-contact-seat-max-servo-steps",
+        str(args.scripted_insertion_contact_seat_max_servo_steps),
+        "--scripted-insertion-contact-seat-plateau-window",
+        str(args.scripted_insertion_contact_seat_plateau_window),
+        "--scripted-insertion-contact-seat-plateau-max-l2",
+        str(args.scripted_insertion_contact_seat_plateau_max_l2),
+        "--scripted-insertion-contact-seat-improvement-epsilon",
+        str(args.scripted_insertion_contact_seat_improvement_epsilon),
+        (
+            "--scripted-insertion-anchor-stop-on-target-regression"
+            if args.scripted_insertion_anchor_stop_on_target_regression
+            else "--no-scripted-insertion-anchor-stop-on-target-regression"
+        ),
+        "--scripted-insertion-anchor-regression-tolerance",
+        str(args.scripted_insertion_anchor_regression_tolerance),
+        "--scripted-insertion-adaptive-flip-axes",
+        str(args.scripted_insertion_adaptive_flip_axes),
+        "--scripted-insertion-lateral-sign",
+        str(args.scripted_insertion_lateral_sign),
+        "--scripted-insertion-z-sign",
+        str(args.scripted_insertion_z_sign),
+        "--scripted-insertion-axis-only-after-step",
+        str(args.scripted_insertion_axis_only_after_step),
+        "--scripted-insertion-ignore-grasp-after-trigger"
+        if args.scripted_insertion_ignore_grasp_after_trigger
+        else "--no-scripted-insertion-ignore-grasp-after-trigger",
+        "--oracle-final-seat-mode",
+        args.oracle_final_seat_mode,
+        "--oracle-final-seat-source-frame",
+        str(args.oracle_final_seat_source_frame),
+        "--live-geometric-final-seat-mode",
+        str(args.live_geometric_final_seat_mode),
+        f"--live-geometric-final-seat-target-rel={args.live_geometric_final_seat_target_rel}",
+        "--scripted-insertion-max-steps",
+        str(args.scripted_insertion_max_steps),
+        "--scripted-insertion-min-rel-x",
+        str(args.scripted_insertion_min_rel_x),
+        "--scripted-insertion-max-rel-x",
+        str(args.scripted_insertion_max_rel_x),
+        "--scripted-insertion-max-abs-y",
+        str(args.scripted_insertion_max_abs_y),
+        "--scripted-insertion-max-abs-z",
+        str(args.scripted_insertion_max_abs_z),
+        "--scripted-insertion-max-hole-speed",
+        str(args.scripted_insertion_max_hole_speed),
+        "--scripted-insertion-terminal-pose-gate",
+        args.scripted_insertion_terminal_pose_gate,
+        "--scripted-insertion-terminal-anchor-source-frame",
+        str(args.scripted_insertion_terminal_anchor_source_frame),
+        "--scripted-insertion-terminal-max-rel-l2",
+        str(args.scripted_insertion_terminal_max_rel_l2),
+        "--scripted-insertion-terminal-max-peg-hole-pos-l2",
+        str(args.scripted_insertion_terminal_max_peg_hole_pos_l2),
+        "--scripted-insertion-terminal-max-peg-hole-rot-rad",
+        str(args.scripted_insertion_terminal_max_peg_hole_rot_rad),
+        "--scripted-insertion-terminal-max-tcp-hole-pos-l2",
+        str(args.scripted_insertion_terminal_max_tcp_hole_pos_l2),
+        "--scripted-insertion-terminal-max-hole-world-pos-l2",
+        str(args.scripted_insertion_terminal_max_hole_world_pos_l2),
+        "--scripted-insertion-terminal-max-hole-world-rot-rad",
+        str(args.scripted_insertion_terminal_max_hole_world_rot_rad),
+        "--scripted-insertion-require-grasp"
+        if args.scripted_insertion_require_grasp
+        else "--no-scripted-insertion-require-grasp",
+        "--scripted-insertion-stop-on-gate-fail"
+        if args.scripted_insertion_stop_on_gate_fail
+        else "--no-scripted-insertion-stop-on-gate-fail",
         "--external-target-mode",
         args.external_target_mode,
+        "--render-live-video" if args.render_live_video else "--no-render-live-video",
         "--video-fps",
         str(args.video_fps),
         "--expected-video-frames",
@@ -277,6 +591,8 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
         str(args.max_episode_steps),
         "--live-progress-interval",
         str(args.live_progress_interval),
+        "--pretrigger-debug-steps",
+        str(args.pretrigger_debug_steps),
         "--controller-action-source",
         args.controller_action_source,
     ]
@@ -295,6 +611,14 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
                 str(args.candidate_outcome_scorer_min_continuable_prob),
                 "--candidate-outcome-scorer-min-inserted-prob",
                 str(args.candidate_outcome_scorer_min_inserted_prob),
+                "--candidate-outcome-scorer-min-pred-state-x",
+                str(args.candidate_outcome_scorer_min_pred_state_x),
+                "--candidate-outcome-scorer-max-pred-state-x",
+                str(args.candidate_outcome_scorer_max_pred_state_x),
+                "--candidate-outcome-scorer-max-pred-state-abs-y",
+                str(args.candidate_outcome_scorer_max_pred_state_abs_y),
+                "--candidate-outcome-scorer-max-pred-state-abs-z",
+                str(args.candidate_outcome_scorer_max_pred_state_abs_z),
             ]
         )
         if args.candidate_outcome_scorer_score_state_abs_axis_weights:
@@ -318,6 +642,11 @@ def subprocess_cmd(args: argparse.Namespace, sample: dict[str, Any], sample_idx:
                 args.candidate_executor_short_prefix_steps,
             ]
         )
+    cmd.append(
+        "--candidate-executor-allow-dp-prior-before-gate"
+        if args.candidate_executor_allow_dp_prior_before_gate
+        else "--no-candidate-executor-allow-dp-prior-before-gate"
+    )
     if args.source_insertion_suffix_bank and int(args.source_suffix_k) > 0:
         cmd.extend(
             [
@@ -407,14 +736,20 @@ def summarize_sample(sample_dir: Path, sample_idx: int, sample: dict[str, Any]) 
             if isinstance(gate, dict):
                 gates.append(gate)
     dp_steps = 0
+    scripted_steps = 0
     external_frames: list[int] = []
     for it in iterations:
         dp_steps += len(it.get("dp_handoff_steps") or [])
+        scripted_steps += len(it.get("scripted_insertion_steps") or [])
         for step in it.get("executed_steps") or []:
             target = step.get("external_target") if isinstance(step, dict) else None
             if isinstance(target, dict) and target.get("applied"):
                 external_frames.append(int(target.get("source_frame")))
         for step in it.get("dp_handoff_steps") or []:
+            target = step.get("external_target") if isinstance(step, dict) else None
+            if isinstance(target, dict) and target.get("applied"):
+                external_frames.append(int(target.get("source_frame")))
+        for step in it.get("scripted_insertion_steps") or []:
             target = step.get("external_target") if isinstance(step, dict) else None
             if isinstance(target, dict) and target.get("applied"):
                 external_frames.append(int(target.get("source_frame")))
@@ -442,6 +777,7 @@ def summarize_sample(sample_dir: Path, sample_idx: int, sample: dict[str, Any]) 
             "continuability_gate_ok_count": sum(1 for gate in gates if gate.get("ok")),
             "continuability_gate_count": len(gates),
             "dp_handoff_executed_steps": dp_steps,
+            "scripted_insertion_executed_steps": scripted_steps,
             "external_target_mode": data.get("external_target_mode"),
             "external_target_source_frame_min": min(external_frames) if external_frames else None,
             "external_target_source_frame_max": max(external_frames) if external_frames else None,
@@ -513,7 +849,7 @@ def write_contact_sheet(rows: list[dict[str, Any]], path: Path) -> dict[str, Any
             f"{row.get('sample_index')} {row.get('scenario')} "
             f"success={row.get('final_success')} f={row.get('final_prefix_frame_index')} "
             f"frames={row.get('final_observed_frames')} wm={row.get('wm_active_frame_count')} "
-            f"dp={row.get('dp_handoff_executed_steps')}"
+            f"dp={row.get('dp_handoff_executed_steps')} script={row.get('scripted_insertion_executed_steps')}"
         )
         draw.text((4, y0 + 4), label[:160], fill=(0, 0, 0))
         for col, frame in enumerate(frames):
@@ -584,7 +920,54 @@ def main() -> int:
         "candidate_outcome_scorer_min_progress_delta": float(args.candidate_outcome_scorer_min_progress_delta),
         "candidate_outcome_scorer_min_continuable_prob": float(args.candidate_outcome_scorer_min_continuable_prob),
         "candidate_outcome_scorer_min_inserted_prob": float(args.candidate_outcome_scorer_min_inserted_prob),
+        "candidate_outcome_scorer_min_pred_state_x": float(args.candidate_outcome_scorer_min_pred_state_x),
+        "candidate_outcome_scorer_max_pred_state_x": float(args.candidate_outcome_scorer_max_pred_state_x),
+        "candidate_outcome_scorer_max_pred_state_abs_y": float(args.candidate_outcome_scorer_max_pred_state_abs_y),
+        "candidate_outcome_scorer_max_pred_state_abs_z": float(args.candidate_outcome_scorer_max_pred_state_abs_z),
         "candidate_executor_short_prefix_steps": args.candidate_executor_short_prefix_steps or None,
+        "candidate_executor_allow_dp_prior_before_gate": bool(
+            args.candidate_executor_allow_dp_prior_before_gate
+        ),
+        "scripted_insertion_contact_seat_target_l2": float(args.scripted_insertion_contact_seat_target_l2),
+        "scripted_insertion_contact_seat_latch": bool(args.scripted_insertion_contact_seat_latch),
+        "scripted_insertion_contact_seat_step_rel_x": float(args.scripted_insertion_contact_seat_step_rel_x),
+        "scripted_insertion_contact_seat_x_servo": bool(args.scripted_insertion_contact_seat_x_servo),
+        "scripted_insertion_contact_seat_target_rel_x": float(args.scripted_insertion_contact_seat_target_rel_x),
+        "scripted_insertion_contact_seat_x_servo_gain": float(args.scripted_insertion_contact_seat_x_servo_gain),
+        "scripted_insertion_contact_seat_x_servo_direction": float(
+            args.scripted_insertion_contact_seat_x_servo_direction
+        ),
+        "scripted_insertion_contact_seat_min_step_rel_x": float(
+            args.scripted_insertion_contact_seat_min_step_rel_x
+        ),
+        "scripted_insertion_contact_seat_max_step_rel_x": float(
+            args.scripted_insertion_contact_seat_max_step_rel_x
+        ),
+        "scripted_insertion_contact_seat_stop_on_x_regression": bool(
+            args.scripted_insertion_contact_seat_stop_on_x_regression
+        ),
+        "scripted_insertion_contact_seat_x_regression_tolerance": float(
+            args.scripted_insertion_contact_seat_x_regression_tolerance
+        ),
+        "scripted_insertion_contact_seat_x_regression_policy": str(
+            args.scripted_insertion_contact_seat_x_regression_policy
+        ),
+        "scripted_insertion_contact_seat_probe_policy": str(
+            args.scripted_insertion_contact_seat_probe_policy
+        ),
+        "scripted_insertion_contact_seat_probe_min_x_improvement": float(
+            args.scripted_insertion_contact_seat_probe_min_x_improvement
+        ),
+        "scripted_insertion_contact_seat_probe_max_lateral_regression": float(
+            args.scripted_insertion_contact_seat_probe_max_lateral_regression
+        ),
+        "scripted_insertion_contact_seat_probe_require_grasp": bool(
+            args.scripted_insertion_contact_seat_probe_require_grasp
+        ),
+        "scripted_insertion_contact_seat_lateral_gain": float(args.scripted_insertion_contact_seat_lateral_gain),
+        "scripted_insertion_contact_seat_max_lateral_step": float(
+            args.scripted_insertion_contact_seat_max_lateral_step
+        ),
         "source_insertion_suffix_bank": (
             str(Path(args.source_insertion_suffix_bank).resolve())
             if args.source_insertion_suffix_bank
@@ -602,6 +985,38 @@ def main() -> int:
         "action_exec_horizon": int(args.action_exec_horizon),
         "dp_handoff_horizon": int(args.dp_handoff_horizon),
         "dp_handoff_chunk_horizon": int(args.dp_handoff_chunk_horizon),
+        "dp_action_seed_base": int(args.dp_action_seed_base),
+        "scripted_insertion_action_frame": str(args.scripted_insertion_action_frame),
+        "scripted_insertion_step_rel_x": float(args.scripted_insertion_step_rel_x),
+        "scripted_insertion_lateral_gain": float(args.scripted_insertion_lateral_gain),
+        "scripted_insertion_max_lateral_step": float(args.scripted_insertion_max_lateral_step),
+        "scripted_insertion_action_target_source_frame": int(
+            args.scripted_insertion_action_target_source_frame
+        ),
+        "scripted_insertion_action_target_gain": float(args.scripted_insertion_action_target_gain),
+        "scripted_insertion_action_target_rot_gain": float(args.scripted_insertion_action_target_rot_gain),
+        "scripted_insertion_action_target_rot_cap": float(args.scripted_insertion_action_target_rot_cap),
+        "scripted_insertion_action_target_rot_source": str(args.scripted_insertion_action_target_rot_source),
+        "scripted_insertion_anchor_stop_on_target_regression": bool(
+            args.scripted_insertion_anchor_stop_on_target_regression
+        ),
+        "scripted_insertion_anchor_regression_tolerance": float(
+            args.scripted_insertion_anchor_regression_tolerance
+        ),
+        "scripted_insertion_lateral_sign": float(args.scripted_insertion_lateral_sign),
+        "scripted_insertion_z_sign": float(args.scripted_insertion_z_sign),
+        "scripted_insertion_axis_only_after_step": int(args.scripted_insertion_axis_only_after_step),
+        "scripted_insertion_ignore_grasp_after_trigger": bool(args.scripted_insertion_ignore_grasp_after_trigger),
+        "oracle_final_seat_mode": str(args.oracle_final_seat_mode),
+        "oracle_final_seat_source_frame": int(args.oracle_final_seat_source_frame),
+        "scripted_insertion_terminal_pose_gate": str(args.scripted_insertion_terminal_pose_gate),
+        "scripted_insertion_terminal_anchor_source_frame": int(args.scripted_insertion_terminal_anchor_source_frame),
+        "scripted_insertion_terminal_max_rel_l2": float(args.scripted_insertion_terminal_max_rel_l2),
+        "scripted_insertion_terminal_max_peg_hole_pos_l2": float(args.scripted_insertion_terminal_max_peg_hole_pos_l2),
+        "scripted_insertion_terminal_max_peg_hole_rot_rad": float(args.scripted_insertion_terminal_max_peg_hole_rot_rad),
+        "scripted_insertion_terminal_max_tcp_hole_pos_l2": float(args.scripted_insertion_terminal_max_tcp_hole_pos_l2),
+        "scripted_insertion_terminal_max_hole_world_pos_l2": float(args.scripted_insertion_terminal_max_hole_world_pos_l2),
+        "scripted_insertion_terminal_max_hole_world_rot_rad": float(args.scripted_insertion_terminal_max_hole_world_rot_rad),
         "cosmos_step_handoff_gate": bool(args.cosmos_step_handoff_gate),
         "save_live_state_snapshots": bool(args.save_live_state_snapshots),
         "live_progress_interval": int(args.live_progress_interval),
