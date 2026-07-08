@@ -15,10 +15,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-output-json", required=True)
     parser.add_argument("--normalization-stats", required=True)
     parser.add_argument("--prefix-frame-index", type=int, required=True)
+    parser.add_argument(
+        "--action-row-offset",
+        type=int,
+        default=0,
+        help=(
+            "Diagnostic/action-label alignment offset added to prefix_frame_index "
+            "before slicing the predicted action rows. Default 0 preserves the "
+            "original extractor behavior."
+        ),
+    )
     parser.add_argument("--action-exec-horizon", type=int, default=8)
     parser.add_argument("--expected-action-steps", type=int, default=300)
     parser.add_argument("--expected-action-dim", type=int, default=32)
     parser.add_argument("--robot-action-dim", type=int, default=7)
+    parser.add_argument("--allow-padded-action-dim", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--output-json", required=True)
     return parser.parse_args()
 
@@ -60,11 +71,18 @@ def main() -> int:
     outputs = payload.get("outputs") or []
     content = (outputs[0].get("content") if outputs else None) or {}
     action = float_matrix(content.get("action"))
-    if len(action) != args.expected_action_steps or any(len(row) != args.expected_action_dim for row in action):
+    row_dims = [len(row) for row in action]
+    action_dim_ok = all(
+        dim == args.expected_action_dim
+        or (args.allow_padded_action_dim and dim > args.expected_action_dim)
+        for dim in row_dims
+    )
+    if len(action) != args.expected_action_steps or not action_dim_ok:
         raise ValueError(
-            f"predicted action shape {[len(action), len(action[0]) if action else 0]} "
-            f"!= [{args.expected_action_steps}, {args.expected_action_dim}]"
+            f"predicted action shape {[len(action), sorted(set(row_dims))]} "
+            f"is incompatible with [{args.expected_action_steps}, {args.expected_action_dim}]"
         )
+    action = [row[: args.expected_action_dim] for row in action]
 
     norm = read_json(stats_path)
     mean = [float(x) for x in norm["mean"]]
@@ -73,7 +91,8 @@ def main() -> int:
     if len(mean) != args.expected_action_dim or len(std) != args.expected_action_dim:
         raise ValueError("normalization stats dimension mismatch")
 
-    start = max(0, min(int(args.prefix_frame_index), args.expected_action_steps))
+    raw_start = int(args.prefix_frame_index) + int(args.action_row_offset)
+    start = max(0, min(raw_start, args.expected_action_steps))
     end = min(args.expected_action_steps, start + max(1, int(args.action_exec_horizon)))
     normalized_robot = [row[: args.robot_action_dim] for row in action[start:end]]
     denormalized_robot = [
@@ -84,6 +103,8 @@ def main() -> int:
         "sample_output_json": str(sample_output_path),
         "normalization_stats": str(stats_path),
         "prefix_frame_index": int(args.prefix_frame_index),
+        "action_row_offset": int(args.action_row_offset),
+        "raw_chunk_start": int(raw_start),
         "chunk_start": start,
         "chunk_end_exclusive": end,
         "chunk_steps": end - start,

@@ -10,6 +10,10 @@ from pathlib import Path
 import time
 from typing import Any
 
+os.environ.setdefault("VK_ICD_FILENAMES", "/etc/vulkan/icd.d/nvidia_icd.json")
+os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
+os.environ["DISPLAY"] = ""
+
 import gymnasium as gym
 import imageio.v2 as imageio
 import numpy as np
@@ -29,6 +33,7 @@ class Args:
     width: int = 256
     height: int = 256
     shader_pack: str = "minimal"
+    render_api: str = "gym"
     camera_eye: tuple[float, float, float] = (0.5, -0.5, 0.8)
     camera_target: tuple[float, float, float] = (0.05, -0.1, 0.4)
     camera_up: tuple[float, float, float] = (0.0, 0.0, 1.0)
@@ -101,13 +106,19 @@ def main() -> None:
         _log(event="reset_start")
         env.reset(seed=[2022], options={"reconfigure": True})
         _log(event="reset_done")
-        _log(event="render_rgb_array_start")
-        frame = common.to_numpy(env.unwrapped.render_rgb_array("render_camera"))
+        if args.render_api == "gym":
+            _log(event="render_gym_start")
+            frame = common.to_numpy(env.render())
+        elif args.render_api == "render_rgb_array":
+            _log(event="render_rgb_array_start")
+            frame = common.to_numpy(env.unwrapped.render_rgb_array("render_camera"))
+        else:
+            raise ValueError(f"unsupported_render_api={args.render_api}")
         frame = np.asarray(frame)
         if frame.ndim == 4 and frame.shape[0] == 1:
             frame = frame[0]
         frame = np.clip(frame[..., :3], 0, 255).astype(np.uint8)
-        _log(event="render_rgb_array_done", shape=list(frame.shape), mean=float(frame.mean()))
+        _log(event="render_done", render_api=args.render_api, shape=list(frame.shape), mean=float(frame.mean()))
         out_path = output_dir / "frame.png"
         imageio.imwrite(out_path, frame)
         _log(event="write_done", output=out_path, bytes=out_path.stat().st_size)

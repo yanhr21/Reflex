@@ -20,14 +20,45 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from export_cosmos3_maniskill_full_episode_wam_conditions import (  # noqa: E402
-    FULL_EPISODE_VECTOR_NAMES,
-    _caption,
-    _load_episode_arrays,
-    _prefix_latent_indexes,
-    _prefix_payload,
-    _raw_vectors_from_arrays,
+from export_cosmos3_maniskill_action_conditions import (  # noqa: E402
+    _build_raw_vectors,
+    _causal_caption,
 )
+
+FULL_EPISODE_VECTOR_NAMES = [
+    "action_0",
+    "action_1",
+    "action_2",
+    "action_3",
+    "action_4",
+    "action_5",
+    "action_6",
+    "task_tcp_x",
+    "task_tcp_y",
+    "task_tcp_z",
+    "task_peg_x",
+    "task_peg_y",
+    "task_peg_z",
+    "task_hole_x",
+    "task_hole_y",
+    "task_hole_z",
+    "task_peg_head_hole_x",
+    "task_peg_head_hole_y",
+    "task_peg_head_hole_z",
+    "task_hole_velocity_x",
+    "task_hole_velocity_y",
+    "task_hole_velocity_z",
+    "task_grasped",
+    "task_inserted",
+    "task_hole_delta_cumulative_x",
+    "task_hole_delta_cumulative_y",
+    "task_hole_delta_cumulative_z",
+    "task_peg_delta_applied_x",
+    "task_peg_delta_applied_y",
+    "task_peg_delta_applied_z",
+    "action_time_fraction",
+    "task_perturb_triggered",
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +75,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-root", default="")
     parser.add_argument("--checkpoint-path", default="")
     parser.add_argument("--history-action-path", default=None)
+    parser.add_argument(
+        "--expected-prefix-video-frames",
+        type=int,
+        default=None,
+        help=(
+            "Caller-asserted prefix-only frame count. Used by live runners that "
+            "just wrote the prefix MP4 from in-memory frames, avoiding a second "
+            "MP4 decode pass on compute nodes."
+        ),
+    )
     parser.add_argument("--total-video-frames", type=int, default=301)
     parser.add_argument("--total-action-steps", type=int, default=300)
     parser.add_argument("--raw-action-dim", type=int, default=32)
@@ -118,6 +159,13 @@ def load_history_action(path: Path, expected_steps: int, raw_action_dim: int) ->
     return out
 
 
+def prefix_latent_indexes(prefix_frames: int, temporal_compression_factor: int) -> list[int]:
+    if temporal_compression_factor <= 0:
+        raise ValueError("temporal_compression_factor must be positive")
+    latent_prefix = 1 + (int(prefix_frames) - 1) // int(temporal_compression_factor)
+    return list(range(latent_prefix))
+
+
 def prefix_payload_from_history(raw: np.ndarray, prefix_frame: int, prefix_role: str) -> dict[str, Any]:
     if raw.ndim != 2 or raw.shape[1] != len(FULL_EPISODE_VECTOR_NAMES):
         raise ValueError(f"live history raw action/state shape {raw.shape} is invalid")
@@ -137,24 +185,41 @@ def prefix_payload_from_history(raw: np.ndarray, prefix_frame: int, prefix_role:
     def xyz(prefix: str) -> list[float]:
         return [values[f"{prefix}_{axis}"] for axis in ("x", "y", "z")]
 
-    hole_velocity = xyz("task_hole_velocity")
+    def first_existing_xyz(*prefixes: str) -> list[float]:
+        for prefix in prefixes:
+            keys = [f"{prefix}_{axis}" for axis in ("x", "y", "z")]
+            if all(key in values for key in keys):
+                return [values[key] for key in keys]
+        return [0.0, 0.0, 0.0]
+
+    tcp_xyz = first_existing_xyz("task_tcp", "prefix_tcp")
+    peg_xyz = first_existing_xyz("task_peg", "prefix_peg")
+    hole_xyz = first_existing_xyz("task_hole", "prefix_hole")
+    peg_head_at_hole_xyz = first_existing_xyz("task_peg_head_hole", "prefix_peg_head_hole")
+    hole_velocity = first_existing_xyz("task_hole_velocity", "prefix_hole_velocity")
+    hole_delta_cumulative = first_existing_xyz("task_hole_delta_cumulative", "prefix_hole_delta_cumulative")
+    peg_delta_applied = first_existing_xyz("task_peg_delta_applied", "prefix_peg_delta_applied")
     return {
         "prefix_frame_index": int(prefix_frame),
         "condition_prefix_frames": int(prefix_frame + 1),
         "prefix_role": prefix_role,
         "mode": prefix_role,
         "mode_id": -1,
-        "tcp_xyz": xyz("task_tcp"),
-        "peg_xyz": xyz("task_peg"),
-        "target_hole_xyz": xyz("task_hole"),
-        "peg_head_at_hole_xyz": xyz("task_peg_head_hole"),
+        "tcp_xyz": tcp_xyz,
+        "peg_xyz": peg_xyz,
+        "hole_xyz": hole_xyz,
+        "target_hole_xyz": hole_xyz,
+        "peg_head_at_hole_xyz": peg_head_at_hole_xyz,
         "hole_velocity_xyz": hole_velocity,
+        "hole_delta_cumulative_xyz": hole_delta_cumulative,
+        "peg_delta_applied_xyz": peg_delta_applied,
         "target_motion_observed": bool(
             hole_delta > 0.002 or float(np.linalg.norm(np.asarray(hole_velocity, dtype=np.float32))) > 0.001
         ),
-        "peg_needs_recovery": bool(values["task_grasped"] <= 0.5),
-        "grasped": bool(values["task_grasped"] > 0.5),
-        "inserted": bool(values["task_inserted"] > 0.5),
+        "peg_needs_recovery": bool(values.get("task_grasped", values.get("prefix_grasped", 0.0)) <= 0.5),
+        "grasped": bool(values.get("task_grasped", values.get("prefix_grasped", 0.0)) > 0.5),
+        "inserted": bool(values.get("task_inserted", values.get("prefix_inserted", 0.0)) > 0.5),
+        "perturb_triggered": bool(values.get("task_perturb_triggered", values.get("prefix_perturb_triggered", 0.0)) > 0.5),
         "causal_boundary": (
             "Live-prefix caption reconstructed from observed history row "
             "prefix_frame_index-1. It contains current observed task state only; "
@@ -189,41 +254,14 @@ def build_raw_action_state(args: argparse.Namespace) -> tuple[np.ndarray, dict[s
             }
         )
     elif args.source_h5:
-        arrays = _load_episode_arrays(Path(args.source_h5), args)
-        full_raw = _raw_vectors_from_arrays(
-            arrays,
-            args.total_video_frames,
-            prefix_frames,
-            "future_aligned_state",
-        )
+        full_raw = _build_raw_vectors(Path(args.source_h5), args.total_video_frames, prefix_frames)
         if full_raw.shape != raw.shape:
             raise ValueError(f"source raw shape {full_raw.shape} != expected {raw.shape}")
         # Only observed history rows are clean conditions. Future rows remain
         # zero and unconditioned so source H5 future object states are not
         # available to controller-facing inference.
         raw[:prefix_frame] = full_raw[:prefix_frame]
-        target_started = args.prefix_role != "target_pre_motion"
-        payload = _prefix_payload(
-            arrays,
-            {
-                "frame_labels": [
-                    {
-                        "mode": args.prefix_role,
-                        "mode_id": -1,
-                        "target_started": target_started,
-                        "peg_needs_recovery": False,
-                        "insert_resume_candidate": args.prefix_role == "insert_resume",
-                        "grasped": True,
-                        "inserted": False,
-                    }
-                ]
-                * args.total_video_frames
-            },
-            prefix_frame,
-            args.prefix_role,
-            args.prefix_role,
-            "live_prefix_source_h5",
-        )
+        payload = prefix_payload_from_history(raw, prefix_frame, args.prefix_role)
         source_summary.update(
             {
                 "source": "source_h5_observed_history_rows_only",
@@ -259,7 +297,7 @@ def prompt_from_args(args: argparse.Namespace, source_summary: dict[str, Any]) -
         return args.prompt.strip()
     payload = source_summary.get("prefix_payload")
     if isinstance(payload, dict):
-        return _caption(payload)
+        return _causal_caption(args.scenario, args.prefix_role, payload)
     return (
         "PegInsertionSide full-episode world/action model live-prefix sample. "
         "Roles: TARGET_OBJECT=hole, TOOL_OBJECT=peg, ACTOR=robot_gripper_tcp. "
@@ -282,8 +320,11 @@ def main() -> int:
     prefix_video = Path(args.prefix_video).resolve()
     if not prefix_video.is_file():
         raise FileNotFoundError(prefix_video)
-    prefix_video_frames = count_media_frames(prefix_video)
     expected_prefix_video_frames = prefix_frame + 1
+    if args.expected_prefix_video_frames is not None:
+        prefix_video_frames = int(args.expected_prefix_video_frames)
+    else:
+        prefix_video_frames = count_media_frames(prefix_video)
     if (
         prefix_video_frames != expected_prefix_video_frames
         and not args.allow_future_frames_in_prefix_video
@@ -302,11 +343,11 @@ def main() -> int:
 
     output_root = Path(args.output_root).resolve()
     input_dir = output_root / "inputs"
-    action_path = input_dir / "actions" / f"{args.sample_name}.json"
+    action_path = input_dir / "actions" / "sample.json"
     write_json(action_path, {"action": action.astype(float).tolist()})
 
     condition_action = list(range(prefix_frame))
-    condition_vision = _prefix_latent_indexes(prefix_frame + 1, args.temporal_compression_factor)
+    condition_vision = prefix_latent_indexes(prefix_frame + 1, args.temporal_compression_factor)
     row = {
         "name": args.sample_name,
         "model_mode": "policy",
@@ -341,6 +382,11 @@ def main() -> int:
             "actor": "robot_gripper_tcp",
             "source_summary": source_summary,
             "prefix_video_frames": prefix_video_frames,
+            "prefix_video_frames_source": (
+                "caller_asserted"
+                if args.expected_prefix_video_frames is not None
+                else "decoded_from_media"
+            ),
             "causal_boundary": (
                 "Only observed RGB prefix latent frames and action/state rows "
                 "strictly before prefix_frame_index are clean conditions. "
