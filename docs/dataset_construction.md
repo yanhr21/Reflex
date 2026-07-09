@@ -103,20 +103,23 @@ Training role:
 
 Do not train DP to imitate failed action chunks from this data.
 
-### C. Frozen-DP Dynamic Failure Data
+### C. Frozen-DP Dynamic Outcome Data
 
 Run the frozen official DP in dynamic scenes.
 
 Training role:
 
-- negative labels;
+- outcome labels for success, miss, jam, no-progress, and target-assisted
+  cases;
 - discrepancy / OOD signal;
 - infeasible, miss, jam, target-assisted, no-progress classification;
 - contrastive separation between insertion-corridor futures and failure
   futures.
 
-This data is important because it proves the base static DP does not already
-solve the dynamic task.
+Success is allowed and must be recorded as an outcome label. C is invalid only
+when the outcome depends on state intervention, snap / teleport, target-assisted
+self-insertion, or another forbidden hidden intervention. Do not force frozen-DP
+success into failure or archive it merely because it succeeded.
 
 ### D. Future-Frame Cooperation Teacher Data
 

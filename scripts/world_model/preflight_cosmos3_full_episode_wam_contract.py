@@ -148,8 +148,8 @@ def _check_rows(rows: list[dict[str, Any]], jsonl_path: Path, args: argparse.Nam
             if video_path not in video_frame_cache:
                 video_frame_cache[video_path] = _video_frames(video_path)
             frames = video_frame_cache[video_path]
-            if frames != args.expected_video_frames:
-                fail(f"video frames {frames} != {args.expected_video_frames}")
+            if frames != args.expected_exported_video_frames:
+                fail(f"exported video frames {frames} != {args.expected_exported_video_frames}")
 
         action_path = _resolve(str(row["action_path"]), jsonl_path)
         if not action_path.exists():
@@ -230,6 +230,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--condition-root", required=True)
     parser.add_argument("--expected-source-episodes", type=int, default=1000)
+    parser.add_argument("--expected-source-video-frames", type=int, default=0)
+    parser.add_argument("--expected-exported-video-frames", type=int, default=0)
     parser.add_argument("--expected-video-frames", type=int, default=301)
     parser.add_argument("--expected-action-steps", type=int, default=300)
     parser.add_argument("--expected-action-dim", type=int, default=32)
@@ -237,6 +239,10 @@ def main() -> None:
     parser.add_argument("--output-json", default="")
     parser.add_argument("--output-md", default="")
     args = parser.parse_args()
+    if args.expected_source_video_frames <= 0:
+        args.expected_source_video_frames = args.expected_video_frames
+    if args.expected_exported_video_frames <= 0:
+        args.expected_exported_video_frames = args.expected_source_video_frames
 
     root = Path(args.condition_root)
     train_jsonl = root / "train" / "video_action_dataset_file.jsonl"
@@ -257,6 +263,8 @@ def main() -> None:
     manifest = json.loads((root / "manifest.json").read_text())
     if int(manifest.get("num_video_frames", -1)) != args.expected_video_frames:
         failures.append("manifest num_video_frames mismatch")
+    if int(manifest.get("source_video_frames", args.expected_source_video_frames)) != args.expected_source_video_frames:
+        failures.append("manifest source_video_frames mismatch")
     if int(manifest.get("num_action_steps", -1)) != args.expected_action_steps:
         failures.append("manifest num_action_steps mismatch")
 

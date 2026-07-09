@@ -8,7 +8,7 @@ SMOKE_OUT_DIR="${SMOKE_OUT_DIR:-${ROOT}/experiments/maniskill/runs/01_dataset/st
 FULL_OUT_DIR="${FULL_OUT_DIR:-${ROOT}/experiments/maniskill/runs/01_dataset/static_rgb/full01}"
 
 case "${MODE}" in
-  diagnostic_b_bootstrap|full_joint)
+  diagnostic_b_bootstrap|joint_overfit_abcd|full_joint)
     ;;
   *)
     echo "dataset_training_inputs_ready=false"
@@ -116,32 +116,32 @@ require_production_index() {
   require_no_missing_field "${stage}_index_positive_dp_bc" "${samples_jsonl}" '"positive_dp_bc_allowed":"false"'
 }
 
-require_file "a_static_h5" "${a_h5}"
-require_file "a_static_json" "${a_json}"
-require_file "legacy_733_paths" "${legacy_paths}"
-require_line_count "legacy_733_paths" "${legacy_paths}" "733"
-require_file "b_train_jsonl" "${train_jsonl}"
-require_line_count "b_train_jsonl" "${train_jsonl}" "900"
-require_file "b_val_jsonl" "${val_jsonl}"
-require_line_count "b_val_jsonl" "${val_jsonl}" "100"
-
-for split in train val; do
-  if [[ "${split}" == "train" ]]; then
-    jsonl="${train_jsonl}"
-  else
-    jsonl="${val_jsonl}"
-  fi
-  require_no_missing_field "b_${split}_dataset_class" "${jsonl}" '"dataset_class":"B_dynamic_rgb_observation"'
-  require_no_missing_field "b_${split}_dataset_role" "${jsonl}" '"dataset_role":"legacy_bootstrap"'
-  require_no_missing_field "b_${split}_split" "${jsonl}" "\"split\":\"${split}\""
-  require_no_missing_field "b_${split}_allowed_losses" "${jsonl}" '"allowed_losses":"cosmos_dynamic_future,target_frame_readout,trajectory_consistency,uncertainty,diagnostic_ablation"'
-  require_no_missing_field "b_${split}_disallowed_losses" "${jsonl}" '"disallowed_losses":"positive_dp_bc,final_method_success,active_new_production_success"'
-  require_no_missing_field "b_${split}_method_evidence" "${jsonl}" '"method_evidence_allowed":"false"'
-  require_no_missing_field "b_${split}_positive_dp_bc" "${jsonl}" '"positive_dp_bc_allowed":"false"'
-  require_no_missing_field "b_${split}_replaces_new_production" "${jsonl}" '"replaces_new_production":"false"'
-done
-
 if [[ "${MODE}" == "diagnostic_b_bootstrap" ]]; then
+  require_file "a_static_h5" "${a_h5}"
+  require_file "a_static_json" "${a_json}"
+  require_file "legacy_733_paths" "${legacy_paths}"
+  require_line_count "legacy_733_paths" "${legacy_paths}" "733"
+  require_file "b_train_jsonl" "${train_jsonl}"
+  require_line_count "b_train_jsonl" "${train_jsonl}" "900"
+  require_file "b_val_jsonl" "${val_jsonl}"
+  require_line_count "b_val_jsonl" "${val_jsonl}" "100"
+
+  for split in train val; do
+    if [[ "${split}" == "train" ]]; then
+      jsonl="${train_jsonl}"
+    else
+      jsonl="${val_jsonl}"
+    fi
+    require_no_missing_field "b_${split}_dataset_class" "${jsonl}" '"dataset_class":"B_dynamic_rgb_observation"'
+    require_no_missing_field "b_${split}_dataset_role" "${jsonl}" '"dataset_role":"legacy_bootstrap"'
+    require_no_missing_field "b_${split}_split" "${jsonl}" "\"split\":\"${split}\""
+    require_no_missing_field "b_${split}_allowed_losses" "${jsonl}" '"allowed_losses":"cosmos_dynamic_future,target_frame_readout,trajectory_consistency,uncertainty,diagnostic_ablation"'
+    require_no_missing_field "b_${split}_disallowed_losses" "${jsonl}" '"disallowed_losses":"positive_dp_bc,final_method_success,active_new_production_success"'
+    require_no_missing_field "b_${split}_method_evidence" "${jsonl}" '"method_evidence_allowed":"false"'
+    require_no_missing_field "b_${split}_positive_dp_bc" "${jsonl}" '"positive_dp_bc_allowed":"false"'
+    require_no_missing_field "b_${split}_replaces_new_production" "${jsonl}" '"replaces_new_production":"false"'
+  done
+
   if [[ "${failures}" -eq 0 ]]; then
     echo "dataset_training_inputs_ready=true"
     echo "allowed_scope=diagnostic_b_bootstrap_only"
@@ -157,6 +157,8 @@ if [[ "${MODE}" == "diagnostic_b_bootstrap" ]]; then
   exit 61
 fi
 
+require_file "a_static_h5" "${a_h5}"
+require_file "a_static_json" "${a_json}"
 require_file "stage1_smoke_summary" "${SMOKE_OUT_DIR}/summary.json"
 require_file "stage1_smoke_video" "${SMOKE_OUT_DIR}/0.mp4"
 if [[ -f "${SMOKE_OUT_DIR}/human_review_approved.txt" ]] && \
@@ -167,7 +169,8 @@ else
   failures=$((failures + 1))
 fi
 static_full_file="$(mktemp)"
-if FULL_OUT_DIR="${FULL_OUT_DIR}" "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh" >"${static_full_file}" 2>&1; then
+if RUN_GROUP=static_rgb RUN_NAME=full01 OUT_DIR="${FULL_OUT_DIR}" \
+  "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh" >"${static_full_file}" 2>&1; then
   echo "a_static_full_ready=true"
   sed 's/^/a_static_full_/' "${static_full_file}"
 else
@@ -177,13 +180,19 @@ else
 fi
 rm -f "${static_full_file}"
 
-for production_stage in \
-  b_dynamic_production \
-  c_frozen_dp_production \
-  d_future_teacher_production \
-  e_cosmos_predicted_production; do
+production_stages=(
+  b_dynamic_production
+  c_frozen_dp_production
+  d_future_teacher_production
+)
+if [[ "${MODE}" == "full_joint" ]]; then
+  production_stages+=(e_cosmos_predicted_production)
+fi
+
+for production_stage in "${production_stages[@]}"; do
   validation_file="$(mktemp)"
-  if "${ROOT}/scripts/world_model/validate_dataset_production_run.sh" "${production_stage}" >"${validation_file}" 2>&1; then
+  if RUN_GROUP= RUN_NAME= OUT_DIR= TARGET_COUNT= \
+    "${ROOT}/scripts/world_model/validate_dataset_production_run.sh" "${production_stage}" >"${validation_file}" 2>&1; then
     sed "s/^/${production_stage}_/" "${validation_file}"
   else
     sed "s/^/${production_stage}_/" "${validation_file}"
@@ -195,16 +204,28 @@ done
 require_production_index b_dynamic_production b_dynamic_production B_dynamic_rgb_observation 1000 false
 require_production_index c_frozen_dp_production c_frozen_dp_production C_frozen_dp_dynamic_failure 500 false
 require_production_index d_future_teacher_production d_future_teacher_production D_future_frame_cooperation_teacher 500 true
-require_production_index e_cosmos_predicted_production e_cosmos_predicted_production E_cosmos_predicted_cooperation 100 false
+if [[ "${MODE}" == "full_joint" ]]; then
+  require_production_index e_cosmos_predicted_production e_cosmos_predicted_production E_cosmos_predicted_cooperation 100 false
+fi
 
 if [[ "${failures}" -eq 0 ]]; then
   echo "dataset_training_inputs_ready=true"
-  echo "allowed_scope=full_joint_training"
+  if [[ "${MODE}" == "joint_overfit_abcd" ]]; then
+    echo "allowed_scope=joint_overfit_training_abcd"
+    echo "e_cosmos_predicted_required=false"
+  else
+    echo "allowed_scope=full_joint_training"
+    echo "e_cosmos_predicted_required=true"
+  fi
   echo "failure_count=0"
   exit 0
 fi
 
 echo "dataset_training_inputs_ready=false"
-echo "reason=full_joint_inputs_incomplete"
+if [[ "${MODE}" == "joint_overfit_abcd" ]]; then
+  echo "reason=joint_overfit_abcd_inputs_incomplete"
+else
+  echo "reason=full_joint_inputs_incomplete"
+fi
 echo "failure_count=${failures}"
 exit 62

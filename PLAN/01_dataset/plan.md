@@ -113,9 +113,11 @@ Not training use:
 
 - do not use failed actions as positive DP expert actions.
 
-## Stage 3: Frozen-DP Dynamic Failure Set
+## Stage 3: Frozen-DP Dynamic Outcome Set
 
-Run frozen official DP in dynamic scenes to expose its failure modes.
+Run frozen official DP in dynamic scenes to record its outcome distribution and
+failure modes. Success and failure are both labels; the collector must not
+force the frozen policy to fail or reject a physically valid success.
 
 Current launch status:
 
@@ -144,7 +146,8 @@ Training use:
 
 Research use:
 
-- proves the base static DP cannot solve the target dynamic setting by itself.
+- measures when the base static DP does or does not solve the target dynamic
+  setting by itself.
 
 ## Stage 4: Future-Frame Cooperation Teacher Set
 

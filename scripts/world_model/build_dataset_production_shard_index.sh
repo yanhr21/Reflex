@@ -12,7 +12,7 @@ case "${STAGE}" in
     run_name="prod01"
     dataset_class="B_dynamic_rgb_observation"
     dataset_role="new_production"
-    trace_rel="trace/motion_trace.json"
+    trace_rel="trace/demo_action_trace.json"
     allowed_losses="cosmos_dynamic_future,target_frame_readout,trajectory_consistency,uncertainty"
     disallowed_losses="positive_dp_bc_from_failed_actions,final_method_evidence"
     target_count=1000
@@ -36,7 +36,7 @@ case "${STAGE}" in
     run_name="prod01"
     dataset_class="D_future_frame_cooperation_teacher"
     dataset_role="new_production_teacher"
-    trace_rel="trace/future_teacher_trace.json"
+    trace_rel="trace/demo_action_trace.json"
     allowed_losses="adapter_residual,moving_frame_conditioning,phase_timing,relative_velocity_at_contact"
     disallowed_losses="deployed_method_success_claim,hidden_future_controller"
     target_count=500

@@ -168,6 +168,14 @@ if [[ "${train_lines}" == "900" && "${val_lines}" == "100" && "${failures}" -eq 
 else
   echo "  b_bootstrap_ready_for_diagnostic=false"
 fi
+joint_overfit_file="$(mktemp)"
+if "${ROOT}/scripts/world_model/require_dataset_training_inputs_ready.sh" joint_overfit_abcd >"${joint_overfit_file}" 2>&1; then
+  echo "  joint_overfit_abcd_ready=true"
+else
+  echo "  joint_overfit_abcd_ready=false"
+fi
+sed 's/^/  joint_overfit_abcd_gate_/' "${joint_overfit_file}"
+rm -f "${joint_overfit_file}"
 full_joint_file="$(mktemp)"
 if "${ROOT}/scripts/world_model/require_dataset_training_inputs_ready.sh" full_joint >"${full_joint_file}" 2>&1; then
   echo "  full_joint_training_ready=true"
@@ -178,7 +186,7 @@ sed 's/^/  full_joint_gate_/' "${full_joint_file}"
 rm -f "${full_joint_file}"
 
 echo "[training_guards]"
-for mode in diagnostic_b_bootstrap full_joint; do
+for mode in diagnostic_b_bootstrap joint_overfit_abcd full_joint; do
   echo "  [${mode}]"
   status_file="$(mktemp)"
   if "${ROOT}/scripts/world_model/require_dataset_training_inputs_ready.sh" "${mode}" >"${status_file}" 2>&1; then

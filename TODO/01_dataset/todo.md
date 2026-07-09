@@ -298,6 +298,105 @@
   attempt archived under
   `experiments/legacy/01_dataset/20260709_b_lr_shell_manifest_typo/` and was
   relaunched again.
+- [x] Add a guarded B/C/D expansion launcher for additional data generation
+  after `prod01`. The new read-only plan is
+  `scripts/world_model/dataset_bcd_expansion_shard_plan.sh`; the dry-run by
+  default launcher is
+  `scripts/slurm/launch_dataset_bcd_expansion_shards_tmux.sh`. The default
+  expansion root is `prod02`, using the same approved multi-motion families,
+  30 FPS, active adapter, B/C/D smoke approval gates, and one-GPU-per-shard
+  Slurm/tmux production wrappers. The launcher refuses existing output dirs
+  and does not overwrite `prod01`.
+- [x] Add a guarded combined review-index builder for the expanded dataset:
+  `scripts/world_model/build_dataset_bcd_prod02_review_index.sh`. Default
+  mode writes one B/C/D `prod02` human-review markdown only after all 18
+  shards are complete and pass summary quality gates. `--status-only` prints
+  current counts and intentionally exits nonzero while shards are incomplete.
+  The 2026-07-09 23:40 status-only check correctly refused to build the final
+  review because only 322/2000 expansion videos existed and no shard had
+  written `summary.json` yet.
+- [ ] Monitor the first `prod02` expansion shards launched on 2026-07-09:
+  B `dynamic_rgb/prod02/lr` job `173510` on `server13` passed render canary
+  and entered collection for 170 RGB episodes; C
+  `frozen_dp_dynamic/prod02/lr` job `173512` and D
+  `future_teacher/prod02/lr` job `173513` are queued as tmux-held Slurm
+  one-GPU shards. These are new data-generation shards, not Cosmos training
+  evidence and not final method evidence.
+  - 2026-07-09 23:14: D `future_teacher/prod02/lr` first attempt job
+    `173513` on `server27` failed the render canary with exit code 124 before
+    collection. The failed active attempt and log were archived under
+    `experiments/legacy/01_dataset/20260709_d_prod02_lr_server27_canary_timeout/`.
+    The expansion launcher now excludes `server27` by default for `prod02`,
+    and D `future_teacher/prod02/lr` was relaunched as job `173524`.
+  - 2026-07-09 23:16 status: B `dynamic_rgb/prod02/lr` job `173510` and C
+    `frozen_dp_dynamic/prod02/lr` job `173512` are collecting on `server13`;
+    D `future_teacher/prod02/lr` job `173524` is queued. Current partial file
+    counts are B 28 videos, C 2 videos, D 0 videos.
+  - 2026-07-09 23:31 status: all 18 `prod02` expansion shards are submitted
+    for B/C/D across `lr`, `fb`, `reverse`, `stop`, `sine`, and `cont`.
+    Running on `server13`: B `lr` job `173510`, B `fb` job `173543`,
+    B `reverse` job `173547`, C `lr` job `173512`, C `fb` job `173544`,
+    C `reverse` job `173548`, D `lr` job `173524`, and D `fb` job `173546`.
+    Queued: B `stop` `173551`, B `sine` `173554`, B `cont` `173558`,
+    C `stop` `173552`, C `sine` `173555`, C `cont` `173559`,
+    D `reverse` `173549`, D `stop` `173553`, D `sine` `173556`, and
+    D `cont` `173563`. Partial counts at this checkpoint: B `lr` 85/170,
+    B `fb` 2/170, B `reverse` 2/165, C `lr` 29/84, D `lr` 54/84,
+    D `fb` 2/84. No `summary.json` is present yet, so no shard is complete.
+    C success remains an outcome label only and is not a rejection condition.
+  - 2026-07-09 23:47 status: D `future_teacher/prod02/lr` completed with
+    84/84 videos, 336 review frames, and `summary.json` present. The combined
+    review-index status check counted it as the first complete shard after
+    verifying its quality summary fields. Total current expansion count is
+    375/2000 videos. D `future_teacher/prod02/reverse` job `173549` has
+    started on `server13`; nine other submitted shards remain pending.
+  - 2026-07-09 23:46-23:50: D `future_teacher/prod02/reverse` first attempt
+    job `173549` on `server13` failed before collection:
+    `render_canary_exit_code=137` and
+    `dataset_smoke_status=blocked_render_canary_failed_no_collection`. The
+    stuck srun was cancelled, the stale tmux session was removed after the
+    Slurm job left the queue, and the failed active output/log were archived
+    under
+    `experiments/legacy/01_dataset/20260709_d_prod02_reverse_server13_canary_killed_137/`
+    with matching logs under
+    `logs/legacy/01_dataset/20260709_d_prod02_reverse_server13_canary_killed_137/`.
+    D `future_teacher/prod02/reverse` was relaunched as job `173612`. This
+    was treated as a failed canary/no-collection attempt, not as data.
+  - 2026-07-09 23:53 status: running shards are still making progress after a
+    short suspected-stall check. The combined review-index status check shows
+    484/2000 videos and 1932 review frames. Current partial counts: B `lr`
+    135/170, B `fb` 54/170, B `reverse` 53/165, C `lr` 55/84, C `fb` 25/84,
+    C `reverse` 25/83, D `lr` 84/84 complete, and D `fb` 53/84. D `reverse`
+    relaunch job `173612` remains queued; `stop`, `sine`, and `cont` shards
+    remain queued for B/C/D.
+  - 2026-07-10 00:04 status: combined review-index status check shows
+    3/18 shards complete and 696/2000 expansion videos. Newly complete shards:
+    B `dynamic_rgb/prod02/lr` 170/170 and D `future_teacher/prod02/fb`
+    84/84. D `future_teacher/prod02/lr` was already complete. Current
+    in-progress counts: B `fb` 96/170, B `reverse` 95/165, C `lr` 76/84,
+    C `fb` 46/84, and C `reverse` 45/83. D `reverse` job `173612` and the
+    remaining `stop` / `sine` / `cont` shards are still queued.
+  - 2026-07-10 00:08 status: C `frozen_dp_dynamic/prod02/lr` completed with
+    84/84 videos and 336 review frames. The combined review-index status
+    check now shows 4/18 shards complete and 758/2000 expansion videos.
+    Running shards: B `fb` 114/170, B `reverse` 113/165, C `fb` 55/84, and
+    C `reverse` 54/83. D `reverse` job `173612` and the remaining queued
+    shards are still waiting for resources.
+  - 2026-07-10 user requested generation pause and script cleanup. All active
+    `dset_*prod` Slurm jobs and `dset_[bcd]_prod02` tmux sessions were
+    cancelled/removed, and the interrupted local `sleep 600` monitor process
+    was cleared. No active production job remains in `squeue`. The stopped
+    `prod02` state is 4/18 complete shards and 794/2000 videos; the combined
+    review index correctly refuses to build because the expansion is
+    incomplete.
+  - 2026-07-10 active script cleanup: archived legacy Oracle / phase03 /
+    fix3 / old replay-render entry points under
+    `scripts/legacy/20260710_generation_cleanup/`. The current active script
+    list is recorded in `scripts/ACTIVE_DATASET_GENERATION.md`. Use only the
+    current B/C/D expansion plan/launcher, B/C/D production wrappers,
+    B/C/D collectors, render canary, gates, validation, and combined review
+    index for this dataset route. Do not use archived scripts for active data
+    generation without re-auditing and deliberately moving them back.
 - [x] Archive and relaunch C `stop` after `MAX_STEP_DELTA_M=0.0045` still
   failed the continuous-motion validation (`0.004592m > 0.004500m`). The old
   failed attempt is archived under
@@ -335,11 +434,99 @@
   samples with `trigger_to_insert_steps=null` did not contain an inserted
   frame, so they are not post-insertion motion. Review file:
   `experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert_lead8.md`.
-- [ ] Wait for user visual review of the new `preinsert_lead8` B/C/D smoke
-  matrix before approving or relaunching B/C/D production. Current
-  `dataset_bcd_review_block_status.sh` reports `goal_blocked=true` with
-  `reason=human_review_approval_missing`; production must remain blocked
-  until explicit approval.
+- [x] Record explicit user approval for the new `preinsert_lead8` B/C/D smoke
+  matrix and open the production gate. Approval was recorded with
+  `scripts/world_model/record_dataset_bcd_smoke_review_decision.sh`; the
+  review status now reports `all_approved=true` and `goal_blocked=false`.
+  Production must keep the approved dynamic timing contract:
+  `motion_trigger_mode=pre_insert_l2`, `motion_trigger_threshold_m=0.20`,
+  `min_trigger_to_insert_steps=8`, and `MAX_STEP_DELTA_M=0.005`.
+- [x] Launch the active B/C/D full production pass after approval as 18
+  tmux-held Slurm shards under `prod01/<family>`: B `lr`, `fb`, `reverse`,
+  `stop`, `sine`, `cont`; C `lr`, `fb`, `reverse`, `stop`, `sine`, `cont`;
+  and D `lr`, `fb`, `reverse`, `stop`, `sine`, `cont`. Current shard targets
+  are B 1000 dynamic-observation episodes, C 500 frozen-DP dynamic rollouts,
+  and D 500 future-teacher rollouts. C success/failure remains an outcome
+  label only and is not a production blocker.
+- [x] Diagnose and requeue the first production jobs assigned to `server05`.
+  B `cont`, all six C shards, and D `lr` failed in the render canary before
+  collection with exit `124` / `137`; no videos or summaries from those
+  attempts were accepted. The failed active dirs/logs, plus old pending D
+  launch records made without the new node exclusion, were archived under
+  `experiments/legacy/01_dataset/20260709_server05_render_canary_fail_requeue/`
+  and
+  `logs/legacy/01_dataset/20260709_server05_render_canary_fail_requeue/`.
+  `server05` is now in the production default exclude list, and B `cont`, all
+  six C shards, and all six D shards were relaunched as tmux-held Slurm jobs.
+- [x] Diagnose and requeue the next production jobs assigned to `server52`.
+  B `cont` and C `lr` / `fb` / `reverse` failed in the render canary before
+  collection with exit `124` / `137`; several old pending C/D jobs were also
+  cancelled or briefly assigned to the same node while the bad-node diagnosis
+  was being applied. No active data from those attempts was accepted. The
+  affected dirs/logs were archived under
+  `experiments/legacy/01_dataset/20260709_server52_render_canary_fail_requeue/`
+  and
+  `logs/legacy/01_dataset/20260709_server52_render_canary_fail_requeue/`.
+  `server52` is now in the production default exclude list, and B `cont`, all
+  six C shards, and all six D shards were relaunched again as tmux-held Slurm
+  jobs.
+- [x] Clean up the pending-log race after the `server52` requeue. C `sine`,
+  C `cont`, and D `lr` had new pending jobs with old `srun_failed=143` lines
+  prepended by exiting stale sessions; those pending shards had not collected
+  data. They were cancelled, archived under
+  `experiments/legacy/01_dataset/20260709_clean_pending_logs_after_requeue_race/`
+  with matching logs under
+  `logs/legacy/01_dataset/20260709_clean_pending_logs_after_requeue_race/`,
+  and relaunched with clean active logs.
+- [x] Diagnose and requeue the production jobs assigned to `server51`. C
+  `lr` / `fb` / `reverse` / `stop` and D `fb` / `reverse` failed render
+  canary with Vulkan `ErrorDeviceLost`; D `stop` passed canary but the node
+  was treated as untrusted for production after multiple device-lost failures.
+  The affected B `cont`, all six C shards, and all six D shards were archived
+  under
+  `experiments/legacy/01_dataset/20260709_server51_render_device_lost_requeue/`
+  with matching logs under
+  `logs/legacy/01_dataset/20260709_server51_render_device_lost_requeue/`.
+  `server51` is now in the production default exclude list, and B `cont`,
+  all six C shards, and all six D shards were relaunched with clean active
+  logs.
+- [x] Diagnose and requeue the production jobs assigned to `server18`. C
+  `sine` and C `cont` failed the render canary before collection with exit
+  `124`; D `lr` and D `fb` failed the render canary with Vulkan
+  `ErrorDeviceLost`. The C active directories contained only manifests and no
+  accepted data; D `lr` / `fb` also stopped before collection. The failed
+  attempts and stale pre-exclusion D pending logs were archived under
+  `experiments/legacy/01_dataset/20260709_server18_render_canary_fail_requeue/`
+  with matching logs under
+  `logs/legacy/01_dataset/20260709_server18_render_canary_fail_requeue/`.
+  `server18` is now in the production default exclude list; C `sine` /
+  `cont` and all six D shards were relaunched as tmux-held Slurm jobs with
+  clean active logs.
+- [x] Diagnose and requeue D production jobs assigned to `server23`. D
+  `reverse` and D `stop` failed the render canary with Vulkan
+  `ErrorDeviceLost`; D `sine` and D `cont` had passed canary and started
+  collection on the same node, so their partial videos were treated as
+  untrusted. The affected D `reverse` / `stop` / `sine` / `cont` attempts
+  were archived under
+  `experiments/legacy/01_dataset/20260709_server23_render_device_lost_requeue/`
+  with matching logs under
+  `logs/legacy/01_dataset/20260709_server23_render_device_lost_requeue/`.
+  `server23` is now in the production default exclude list, and those four D
+  shards were relaunched with clean active logs.
+- [x] Complete and verify ABCD full production after the approved
+  `preinsert_lead8` smoke matrix. A static RGB remains ready as 20 shards,
+  1000 videos, and 480 review frames. B dynamic observation production is
+  complete as six shards / 1000 videos. C frozen-DP dynamic production is
+  complete as six shards / 500 videos. D future-teacher production is complete
+  as six shards / 500 videos. All B/C/D active production summaries report
+  `status=production_complete`, `motion_trigger_mode=pre_insert_l2`,
+  `motion_trigger_threshold_m=0.20`, `state_intervention=false`,
+  `snap_or_teleport=false`, and pass the per-sample `min_trigger_to_insert`
+  gate with no accepted sample moving on or after insertion. B/C/D shard
+  indexes were refreshed under
+  `experiments/maniskill/data/active/b_dynamic_production/`,
+  `experiments/maniskill/data/active/c_frozen_dp_production/`, and
+  `experiments/maniskill/data/active/d_future_teacher_production/`.
 
 ## Immediate Documentation / Design
 

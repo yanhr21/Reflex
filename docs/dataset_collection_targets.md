@@ -48,8 +48,9 @@ Initial training-scale target after smoke approval:
 - B dynamic RGB observation: at least 1000 episodes across motion families.
   Success is not required. This is the main data for Cosmos dynamic future
   prediction.
-- C frozen-DP dynamic failure: at least 500 rollouts, balanced across motion
-  families, to prove and label static-DP failure modes.
+- C frozen-DP dynamic outcome: at least 500 rollouts, balanced across motion
+  families, to record frozen-DP successes, failures, and discrepancy labels.
+  Success is an allowed outcome label, not a reason to reject or archive C.
 - D future-frame cooperation teacher: start with 100 smoke/overfit-quality
   rollouts, then scale toward 500-1000 if the GT future-frame interface works.
 - E Cosmos-predicted cooperation: start only after Cosmos/readout predicts
@@ -57,21 +58,44 @@ Initial training-scale target after smoke approval:
   100-300 rollouts for robustness/adaptation, then scale if successful.
 
 Do not treat these numbers as success claims. They are data production targets.
-After B/C/D/E production finishes, `full_joint` training input readiness
-requires the production validators to pass:
+After A full RGB and B/C/D production finish, the first joint-training
+readiness gate is `joint_overfit_abcd`. This gate is for the required
+overfit experiment before full training and intentionally does not require E,
+because E depends on Cosmos/readout predicted future target frames.
+
+The `joint_overfit_abcd` readiness gate requires these production validators
+to pass:
 
 - `scripts/world_model/validate_dataset_production_run.sh b_dynamic_production`
 - `scripts/world_model/validate_dataset_production_run.sh c_frozen_dp_production`
 - `scripts/world_model/validate_dataset_production_run.sh d_future_teacher_production`
-- `scripts/world_model/validate_dataset_production_run.sh e_cosmos_predicted_production`
 
-After those validators pass, each production class must also be indexed into
-the active data registry before full joint training can start:
+It also requires B/C/D to be indexed into the active data registry:
 
 - `scripts/world_model/build_dataset_production_index.sh b_dynamic_production`
 - `scripts/world_model/build_dataset_production_index.sh c_frozen_dp_production`
 - `scripts/world_model/build_dataset_production_index.sh d_future_teacher_production`
+
+The overfit training guard is:
+
+```bash
+scripts/world_model/require_dataset_training_inputs_ready.sh joint_overfit_abcd
+```
+
+E remains a later dataset class. After Cosmos/readout can predict future
+target frames well enough, E production should pass:
+
+- `scripts/world_model/validate_dataset_production_run.sh e_cosmos_predicted_production`
+
+and be indexed with:
+
 - `scripts/world_model/build_dataset_production_index.sh e_cosmos_predicted_production`
+
+The later all-class training guard is:
+
+```bash
+scripts/world_model/require_dataset_training_inputs_ready.sh full_joint
+```
 
 For B/C/D shard production under `prod01/<family>`, use the shard index
 builder after the shard-aware validator passes:
@@ -92,16 +116,11 @@ and `manifest.txt` match the requested stage, dataset class, run group, run
 name, output directory, method/teacher evidence flags, and no-state-
 intervention contract.
 
-The full training guard is:
-
-```bash
-scripts/world_model/require_dataset_training_inputs_ready.sh full_joint
-```
-
-This guard requires production validation and production training indexes, not
-just output-directory existence. It must remain closed until A full RGB and
-B/C/D/E production data are actually available under their reviewed roles and
-indexed into `train_samples.jsonl` / `val_samples.jsonl`.
+Both guards require production validation and production training indexes, not
+just output-directory existence. `joint_overfit_abcd` remains the immediate
+gate for the Stage 2 overfit route; `full_joint` remains closed until E is
+actually available under its reviewed role and indexed into
+`train_samples.jsonl` / `val_samples.jsonl`.
 
 Current limited bootstrap:
 
@@ -152,7 +171,9 @@ and requires the six active families above.
 - A: DP BC / distillation, Cosmos static future, phase extraction.
 - B: Cosmos future RGB / latent, target-frame readout, uncertainty,
   trajectory consistency.
-- C: negative labels, discrepancy, infeasible/no-progress, contrastive.
+- C: outcome labels, negative / discrepancy labels, infeasible/no-progress,
+  contrastive. Physically valid frozen-DP success remains a label, not a
+  production failure.
 - D: moving-frame adapter / residual, phase/timing, relative velocity at
   contact.
 - E: adapter robustness to Cosmos prediction, uncertainty-conditioned live

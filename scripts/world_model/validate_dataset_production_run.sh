@@ -11,7 +11,7 @@ case "${STAGE}" in
     DATASET_CLASS="B_dynamic_rgb_observation"
     TARGET_COUNT="${TARGET_COUNT:-1000}"
     COUNT_FIELD="episode_count"
-    TRACE_REL="trace/motion_trace.json"
+    TRACE_REL="trace/demo_action_trace.json"
     EXPECT_TEACHER_EVIDENCE="false"
     ;;
   c_frozen_dp_production)
@@ -28,8 +28,8 @@ case "${STAGE}" in
     RUN_NAME="${RUN_NAME:-prod01}"
     DATASET_CLASS="D_future_frame_cooperation_teacher"
     TARGET_COUNT="${TARGET_COUNT:-500}"
-    COUNT_FIELD="rollout_count"
-    TRACE_REL="trace/future_teacher_trace.json"
+    COUNT_FIELD="video_count"
+    TRACE_REL="trace/demo_action_trace.json"
     EXPECT_TEACHER_EVIDENCE="true"
     ;;
   e_cosmos_predicted_production)
@@ -122,8 +122,18 @@ if [[ ! -f "${SUMMARY}" && -d "${OUT_DIR}" ]]; then
     done
 
     if [[ -d "${shard_videos_dir}" ]]; then
-      shard_video_files="$(find "${shard_videos_dir}" -type f -name '*.mp4' | wc -l | tr -d ' ')"
-      shard_video_bytes="$(find "${shard_videos_dir}" -type f -name '*.mp4' -printf '%s\n' | awk '{s+=$1} END {print s+0}')"
+      shard_video_files=0
+      shard_video_bytes=0
+      shopt -s nullglob
+      shard_video_paths=("${shard_videos_dir}"/*.mp4)
+      shopt -u nullglob
+      shard_video_files="${#shard_video_paths[@]}"
+      for video_path in "${shard_video_paths[@]}"; do
+        if [[ -f "${video_path}" ]]; then
+          video_size="$(stat -c '%s' "${video_path}")"
+          shard_video_bytes=$((shard_video_bytes + video_size))
+        fi
+      done
     else
       shard_video_files=0
       shard_video_bytes=0

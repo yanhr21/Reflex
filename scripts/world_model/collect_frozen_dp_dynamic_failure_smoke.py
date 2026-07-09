@@ -5,6 +5,11 @@ The policy is the official state Diffusion Policy checkpoint loaded through the
 existing ManiSkill DP training code. The target motion is commanded through
 `active_dynamic_peg_adapter.py`; failed chunks are negative/diagnostic data,
 not positive BC.
+
+The historical class name contains "failure", but success is allowed and is
+recorded as an outcome label. A C rollout is invalid only for forbidden
+mechanisms such as state intervention, snap / teleport, or target-assisted
+self-insertion.
 """
 
 from __future__ import annotations
