@@ -52,11 +52,16 @@ def iter_files(root: Path, exclude_parts: set[str]) -> list[Path]:
 
 
 def parse_retry_after(error_text: str, default: float) -> float:
+    if "128 per hour" in error_text or "repository commits" in error_text:
+        match_minutes = re.search(r"in ([0-9]+) minutes", error_text)
+        if match_minutes:
+            return max(default, float(match_minutes.group(1)) * 60.0 + 300.0)
+        return max(default, 3900.0)
     match = re.search(r"Retry after ([0-9]+) seconds", error_text)
     if match:
         return max(default, float(match.group(1)) + 5.0)
-    if "128 per hour" in error_text or "rate limit" in error_text.lower():
-        return max(default, 3700.0)
+    if "rate limit" in error_text.lower():
+        return max(default, 900.0)
     return default
 
 
