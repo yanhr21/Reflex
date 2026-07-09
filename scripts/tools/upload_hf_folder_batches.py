@@ -102,6 +102,7 @@ def main() -> int:
     parser.add_argument("--max-size", type=int, default=None)
     parser.add_argument("--batch-files", type=int, default=100)
     parser.add_argument("--batch-bytes", type=int, default=512 * 1024 * 1024)
+    parser.add_argument("--num-threads", type=int, default=5)
     parser.add_argument("--retry-sleep", type=float, default=300.0)
     args = parser.parse_args()
 
@@ -172,6 +173,7 @@ def main() -> int:
                     repo_type=args.repo_type,
                     operations=operations,
                     commit_message=f"Upload experiment batch {args.shard_index}-{batch_idx}",
+                    num_threads=args.num_threads,
                 )
             except KeyboardInterrupt:
                 raise
