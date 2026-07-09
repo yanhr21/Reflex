@@ -72,6 +72,9 @@ echo "decision=${decision}"
 echo "reviewer=${reviewer}"
 echo "must_not_auto_approve=true"
 
+families=(lr_pos lr_neg fb_pos fb_neg reverse sine peg_disturb)
+review_md="${REVIEW_MD:-${ROOT}/experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert_lead8.md}"
+
 run_one() {
   local run_group="$1"
   local run_name="$2"
@@ -87,9 +90,16 @@ run_one() {
 
   echo "[${label}]"
   RUN_GROUP="${run_group}" RUN_NAME="${run_name}" \
+    REVIEW_MD="${review_md}" \
     "${ROOT}/scripts/world_model/record_dataset_smoke_review_decision.sh" "${args[@]}"
 }
 
-run_one "dynamic_rgb" "smoke01" "b_dynamic_smoke"
-run_one "frozen_dp_dynamic" "smoke01" "c_frozen_dp_smoke"
-run_one "future_teacher" "smoke01" "d_future_teacher_smoke"
+for family in "${families[@]}"; do
+  run_one "dynamic_rgb" "smoke_${family}" "b_dynamic_smoke_${family}"
+done
+for family in "${families[@]}"; do
+  run_one "frozen_dp_dynamic" "smoke_${family}" "c_frozen_dp_smoke_${family}"
+done
+for family in "${families[@]}"; do
+  run_one "future_teacher" "smoke_${family}" "d_future_teacher_smoke_${family}"
+done

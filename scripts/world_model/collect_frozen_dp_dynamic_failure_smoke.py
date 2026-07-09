@@ -13,6 +13,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import traceback
 from typing import Any
 
 import gymnasium as gym
@@ -93,12 +94,14 @@ def _task_state(base_env: Any) -> dict[str, Any]:
         0
     ].astype(np.float64)
     grasped = bool(_tensor_to_np(base_env.agent.is_grasping(base_env.peg, max_angle=20)).reshape(-1)[0])
+    inserted = bool(_tensor_to_np(base_env.has_peg_inserted()[0]).reshape(-1)[0])
     return {
         "tcp_p": tcp_p,
         "peg_p": peg_p,
         "peg_head_at_hole": peg_head_at_hole,
         "peg_head_l2": float(np.linalg.norm(peg_head_at_hole)),
         "grasped": grasped,
+        "inserted": inserted,
     }
 
 
@@ -141,6 +144,38 @@ def _quality_summary(rows: list[dict[str, Any]], args: argparse.Namespace) -> di
     }
 
 
+def _add_pre_insert_timing_quality(
+    quality: dict[str, Any],
+    rows: list[dict[str, Any]],
+    motion_trigger_step: int | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    payload = dict(quality)
+    first_inserted_step: int | None = None
+    for row in rows:
+        if bool(row.get("inserted")):
+            first_inserted_step = int(row["env_step"])
+            break
+    payload["first_inserted_step"] = first_inserted_step
+    payload["first_motion_step"] = motion_trigger_step
+    payload["min_trigger_to_insert_steps"] = args.min_trigger_to_insert_steps
+    payload["pre_insert_motion_required"] = args.require_pre_insert_motion
+    if motion_trigger_step is None or not args.require_pre_insert_motion:
+        payload["trigger_to_insert_steps"] = None
+        return payload
+    if first_inserted_step is None:
+        payload["trigger_to_insert_steps"] = None
+        return payload
+    lead_steps = int(first_inserted_step) - int(motion_trigger_step)
+    payload["trigger_to_insert_steps"] = lead_steps
+    if lead_steps < args.min_trigger_to_insert_steps:
+        failures = list(payload.get("quality_gate_failures", []))
+        failures.append("motion_started_too_close_to_or_after_insertion")
+        payload["quality_gate_failures"] = failures
+        payload["quality_gate_passed"] = False
+    return payload
+
+
 def build_train_args(saved: dict[str, Any], args: argparse.Namespace) -> ms_train.Args:
     train_args = ms_train.Args()
     for key, value in saved.items():
@@ -174,6 +209,28 @@ def _maybe_trigger_motion(
 ) -> int | None:
     if args.motion_trigger_mode == "fixed_step":
         return args.motion_start_step
+    if args.motion_trigger_mode == "inserted":
+        if current_trigger_step is not None:
+            return current_trigger_step
+        if step < args.motion_trigger_min_step:
+            return None
+        if args.motion_trigger_require_grasp and not bool(task_state.get("grasped")):
+            return None
+        if bool(task_state.get("inserted")):
+            return step
+        return None
+    if args.motion_trigger_mode == "pre_insert_l2":
+        if current_trigger_step is not None:
+            return current_trigger_step
+        if step < args.motion_trigger_min_step:
+            return None
+        if args.motion_trigger_require_grasp and not bool(task_state.get("grasped")):
+            return None
+        if bool(task_state.get("inserted")):
+            return None
+        if float(task_state.get("peg_head_l2", float("inf"))) <= args.motion_trigger_threshold_m:
+            return step
+        return None
     if args.motion_trigger_mode != "peg_head_l2":
         raise RuntimeError(f"unknown motion trigger mode: {args.motion_trigger_mode}")
     if current_trigger_step is not None:
@@ -185,6 +242,36 @@ def _maybe_trigger_motion(
     if float(task_state.get("peg_head_l2", float("inf"))) <= args.motion_trigger_threshold_m:
         return step
     return None
+
+
+def _maybe_apply_peg_disturbance(
+    *,
+    base_env: Any,
+    env_step: int,
+    motion_trigger_step: int | None,
+    args: argparse.Namespace,
+) -> dict[str, Any] | None:
+    if args.scenario != "peg_disturb" or motion_trigger_step is None:
+        return None
+    local_step = env_step - motion_trigger_step
+    if local_step < 0 or local_step >= args.peg_disturb_duration_steps:
+        return None
+    force = np.asarray(
+        (args.peg_disturb_force_x, args.peg_disturb_force_y, args.peg_disturb_force_z),
+        dtype=np.float32,
+    )
+    base_env.peg.apply_force(force)
+    force_norm = float(np.linalg.norm(force.astype(np.float64)))
+    return {
+        "step": int(env_step),
+        "scenario": args.scenario,
+        "command_kind": "peg_physical_force",
+        "peg_perturb_trace": True,
+        "peg_perturb_force_xyz": force.astype(float).tolist(),
+        "instantaneous_delta_m": force_norm,
+        "state_intervention": False,
+        "snap_or_teleport": False,
+    }
 
 
 def make_env(train_args: ms_train.Args):
@@ -241,22 +328,31 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     motion_rows: list[dict[str, Any]] = []
     task_rows: list[dict[str, Any]] = []
     quality_by_rollout: list[dict[str, Any]] = []
+    skipped_attempts: list[dict[str, Any]] = []
     video_paths: list[Path] = []
     total_frames = 0
     failure: str | None = None
     success_once = False
     final_info: dict[str, Any] = {}
+    max_rollout_attempts = args.max_rollout_attempts
+    if max_rollout_attempts <= 0:
+        max_rollout_attempts = max(args.num_rollouts * 5, args.num_rollouts + 20)
+    attempt_idx = 0
     try:
         with torch.no_grad():
-            for rollout_idx in range(args.num_rollouts):
+            accepted_rollout_idx = 0
+            while accepted_rollout_idx < args.num_rollouts and attempt_idx < max_rollout_attempts:
+                rollout_idx = accepted_rollout_idx
                 frames: list[np.ndarray] = []
-                obs, reset_info = envs.reset(seed=args.seed + rollout_idx)
+                obs, reset_info = envs.reset(seed=args.seed + attempt_idx)
                 base_env = envs.envs[0].unwrapped
                 initial_p, initial_q = _pose_arrays(base_env.box)
                 previous_p: np.ndarray | None = initial_p.copy()
                 env_step = 0
                 done = False
                 rollout_task_rows: list[dict[str, Any]] = []
+                rollout_action_rows: list[dict[str, Any]] = []
+                rollout_motion_rows: list[dict[str, Any]] = []
                 motion_trigger_step: int | None = None
 
                 while env_step < args.max_episode_steps:
@@ -271,7 +367,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                             args=args,
                         )
                         command = None
-                        if motion_trigger_step is not None:
+                        if motion_trigger_step is not None and args.scenario != "peg_disturb":
                             effective_spec = DynamicMotionSpec(
                                 scenario=args.scenario,
                                 start_step=motion_trigger_step,
@@ -291,13 +387,28 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                         if command is not None:
                             motion_row = command_target_from_motion(base_env.box, sapien.Pose, command)
                             motion_row["rollout"] = int(rollout_idx)
+                            motion_row["attempt_idx"] = int(attempt_idx)
                             motion_row["motion_trigger_mode"] = args.motion_trigger_mode
                             motion_row["motion_trigger_step"] = int(motion_trigger_step)
                             motion_row["motion_trigger_threshold_m"] = args.motion_trigger_threshold_m
                             motion_row["pre_step_peg_head_l2"] = float(pre_task_state["peg_head_l2"])
                             motion_row["pre_step_grasped"] = bool(pre_task_state["grasped"])
-                            motion_rows.append(motion_row)
+                            rollout_motion_rows.append(motion_row)
                             previous_p = np.asarray(command.target_p, dtype=np.float64)
+                        peg_force_row = _maybe_apply_peg_disturbance(
+                            base_env=base_env,
+                            env_step=env_step,
+                            motion_trigger_step=motion_trigger_step,
+                            args=args,
+                        )
+                        if peg_force_row is not None:
+                            peg_force_row["rollout"] = int(rollout_idx)
+                            peg_force_row["attempt_idx"] = int(attempt_idx)
+                            peg_force_row["motion_trigger_mode"] = args.motion_trigger_mode
+                            peg_force_row["motion_trigger_step"] = int(motion_trigger_step)
+                            peg_force_row["pre_step_peg_head_l2"] = float(pre_task_state["peg_head_l2"])
+                            peg_force_row["pre_step_grasped"] = bool(pre_task_state["grasped"])
+                            rollout_motion_rows.append(peg_force_row)
 
                         action = action_seq[:, action_idx]
                         obs, reward, terminated, truncated, info = envs.step(action)
@@ -309,14 +420,15 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                         task_state = _task_state(base_env)
                         task_row = {
                             "rollout": int(rollout_idx),
+                            "attempt_idx": int(attempt_idx),
                             "env_step": int(env_step),
                             **_jsonable(task_state),
                         }
-                        task_rows.append(task_row)
                         rollout_task_rows.append(task_row)
-                        action_rows.append(
+                        rollout_action_rows.append(
                             {
                                 "rollout": int(rollout_idx),
+                                "attempt_idx": int(attempt_idx),
                                 "env_step": int(env_step),
                                 "action_idx": int(action_idx),
                                 "action": action.reshape(-1).astype(float).tolist(),
@@ -337,15 +449,34 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                     if done or env_step >= args.max_episode_steps:
                         break
 
-                quality = _quality_summary(rollout_task_rows, args)
+                quality = _add_pre_insert_timing_quality(
+                    _quality_summary(rollout_task_rows, args),
+                    rollout_task_rows,
+                    motion_trigger_step,
+                    args,
+                )
                 quality["rollout"] = int(rollout_idx)
+                quality["attempt_idx"] = int(attempt_idx)
                 quality["motion_trigger_step"] = motion_trigger_step
                 quality["motion_trigger_mode"] = args.motion_trigger_mode
-                quality_by_rollout.append(quality)
                 if motion_trigger_step is None:
-                    raise RuntimeError(f"motion trigger never reached for rollout {rollout_idx}")
+                    quality["accepted"] = False
+                    quality["skip_reason"] = "motion_trigger_never_reached"
+                    skipped_attempts.append(quality)
+                    attempt_idx += 1
+                    continue
                 if not quality["quality_gate_passed"]:
-                    raise RuntimeError(f"task motion quality gate failed: {quality['quality_gate_failures']}")
+                    quality["accepted"] = False
+                    quality["skip_reason"] = "task_motion_quality_gate_failed"
+                    skipped_attempts.append(quality)
+                    attempt_idx += 1
+                    continue
+
+                quality["accepted"] = True
+                quality_by_rollout.append(quality)
+                task_rows.extend(rollout_task_rows)
+                action_rows.extend(rollout_action_rows)
+                motion_rows.extend(rollout_motion_rows)
 
                 if frames:
                     video_path = video_dir / f"rollout_{rollout_idx:06d}.mp4"
@@ -355,7 +486,16 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                     for idx in sorted(set([0, args.grasp_review_step, len(frames) // 2, len(frames) - 1])):
                         if 0 <= idx < len(frames):
                             imageio.imwrite(review_dir / f"rollout_{rollout_idx:06d}_frame_{idx:04d}.png", frames[idx])
+                accepted_rollout_idx += 1
+                attempt_idx += 1
+            if accepted_rollout_idx < args.num_rollouts:
+                raise RuntimeError(
+                    "insufficient accepted rollouts: "
+                    f"accepted {accepted_rollout_idx} of {args.num_rollouts} "
+                    f"after {attempt_idx} attempts"
+                )
     except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
         failure = f"{type(exc).__name__}: {exc}"
     finally:
         envs.close()
@@ -371,12 +511,16 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         "motion_trigger_min_step": args.motion_trigger_min_step,
         "seed": args.seed,
         "num_rollouts": args.num_rollouts,
+        "max_rollout_attempts": max_rollout_attempts,
+        "attempt_count": attempt_idx,
         "reset_info": locals().get("reset_info", {}),
         "motion_rows": motion_rows,
         "action_rows": action_rows,
         "task_rows": task_rows,
         "motion_trace_validation": validate_trace_rows(motion_rows),
+        "peg_disturbance_physical_force": args.scenario == "peg_disturb",
         "quality_by_rollout": quality_by_rollout,
+        "skipped_attempts": skipped_attempts,
         "positive_policy_data_allowed": False,
     }
     trace_path = trace_dir / "frozen_dp_trace.json"
@@ -386,10 +530,13 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     dataset_smoke_only = _str_bool(args.dataset_smoke_only)
     human_review_required = _str_bool(args.human_review_required)
     large_scale_production_allowed = _str_bool(args.large_scale_production_allowed)
-    all_quality_passed = bool(quality_by_rollout) and all(row["quality_gate_passed"] for row in quality_by_rollout)
+    all_quality_passed = (
+        len(quality_by_rollout) == args.num_rollouts
+        and all(row["quality_gate_passed"] for row in quality_by_rollout)
+    )
     status = (
         ("smoke_complete" if dataset_smoke_only else "production_complete")
-        if failure is None and frames and all_quality_passed
+        if failure is None and len(video_paths) == args.num_rollouts and all_quality_passed
         else "failed"
     )
     summary = {
@@ -404,8 +551,14 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         "motion_trigger_threshold_m": args.motion_trigger_threshold_m,
         "motion_trigger_require_grasp": args.motion_trigger_require_grasp,
         "motion_trigger_min_step": args.motion_trigger_min_step,
+        "peg_disturbance_physical_force": args.scenario == "peg_disturb",
+        "peg_disturb_force_xyz": [args.peg_disturb_force_x, args.peg_disturb_force_y, args.peg_disturb_force_z],
+        "peg_disturb_duration_steps": args.peg_disturb_duration_steps,
         "seed": args.seed,
         "num_rollouts_requested": args.num_rollouts,
+        "max_rollout_attempts": max_rollout_attempts,
+        "attempt_count": attempt_idx,
+        "skipped_attempt_count": len(skipped_attempts),
         "rollout_count": len(video_paths),
         "max_episode_steps": args.max_episode_steps,
         "frame_count": total_frames,
@@ -424,6 +577,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         "snap_or_teleport": False,
         "task_motion_quality_gate_passed": all_quality_passed,
         "quality_by_rollout": quality_by_rollout,
+        "skipped_attempts": skipped_attempts,
         "allowed_losses": loss_fields["allowed_losses"],
         "disallowed_losses": loss_fields["disallowed_losses"],
         "output_dir": str(output_dir),
@@ -453,14 +607,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sim-backend", default="physx_cpu")
     parser.add_argument("--max-episode-steps", type=int, default=100)
     parser.add_argument("--num-rollouts", type=int, default=1)
+    parser.add_argument("--max-rollout-attempts", type=int, default=0)
     parser.add_argument("--seed", type=int, default=710001)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--scenario", default="constant_lr")
     parser.add_argument("--motion-start-step", type=int, default=20)
-    parser.add_argument("--motion-trigger-mode", choices=["fixed_step", "peg_head_l2"], default="peg_head_l2")
-    parser.add_argument("--motion-trigger-threshold-m", type=float, default=0.12)
+    parser.add_argument(
+        "--motion-trigger-mode",
+        choices=["fixed_step", "peg_head_l2", "inserted", "pre_insert_l2"],
+        default="pre_insert_l2",
+    )
+    parser.add_argument("--motion-trigger-threshold-m", type=float, default=0.20)
     parser.add_argument("--motion-trigger-min-step", type=int, default=0)
     parser.add_argument("--motion-trigger-require-grasp", action="store_true", default=True)
+    parser.add_argument("--require-pre-insert-motion", action="store_true", default=True)
+    parser.add_argument("--min-trigger-to-insert-steps", type=int, default=8)
     parser.add_argument("--motion-duration-steps", type=int, default=40)
     parser.add_argument("--delta-x", type=float, default=0.0)
     parser.add_argument("--delta-y", type=float, default=0.08)
@@ -468,6 +629,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reverse-fraction", type=float, default=0.5)
     parser.add_argument("--sine-cycles", type=float, default=0.5)
     parser.add_argument("--max-step-delta-m", type=float, default=0.004)
+    parser.add_argument("--peg-disturb-force-x", type=float, default=0.0)
+    parser.add_argument("--peg-disturb-force-y", type=float, default=-25.0)
+    parser.add_argument("--peg-disturb-force-z", type=float, default=0.0)
+    parser.add_argument("--peg-disturb-duration-steps", type=int, default=18)
     parser.add_argument("--min-tcp-motion-m", type=float, default=0.05)
     parser.add_argument("--min-peg-motion-m", type=float, default=0.03)
     parser.add_argument("--require-grasp", action="store_true", default=True)

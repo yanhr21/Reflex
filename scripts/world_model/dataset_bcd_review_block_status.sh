@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/public/home/yanhongru/ICLR2027/Reflex}"
-REVIEW_MD="${ROOT}/experiments/maniskill/runs/01_dataset/review/bcd_smoke_review_20260708.md"
+REVIEW_MD="${ROOT}/experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert_lead8.md"
 
 echo "dataset_bcd_review_block_status_ok=true"
 echo "read_only=true"
@@ -16,6 +16,7 @@ echo "production_launcher=${ROOT}/scripts/slurm/launch_dataset_bcd_production_sh
 all_approved=true
 any_rejected=false
 missing_artifacts=0
+families=(lr_pos lr_neg fb_pos fb_neg reverse sine peg_disturb)
 
 report_one() {
   local label="$1"
@@ -23,7 +24,7 @@ report_one() {
   local run_name="$3"
   local out_dir="${ROOT}/experiments/maniskill/runs/01_dataset/${run_group}/${run_name}"
   local summary="${out_dir}/summary.json"
-  local review_request="${out_dir}/review_request.md"
+  local review_request="${REVIEW_MD}"
   local approval="${out_dir}/human_review_approved.txt"
   local rejection="${out_dir}/human_review_rejected.txt"
   local video_count=0
@@ -69,9 +70,15 @@ report_one() {
   fi
 }
 
-report_one B dynamic_rgb smoke01
-report_one C frozen_dp_dynamic smoke01
-report_one D future_teacher smoke01
+for family in "${families[@]}"; do
+  report_one "B_${family}" dynamic_rgb "smoke_${family}"
+done
+for family in "${families[@]}"; do
+  report_one "C_${family}" frozen_dp_dynamic "smoke_${family}"
+done
+for family in "${families[@]}"; do
+  report_one "D_${family}" future_teacher "smoke_${family}"
+done
 
 echo "[summary]"
 echo "  missing_artifact_classes=${missing_artifacts}"

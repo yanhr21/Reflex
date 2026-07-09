@@ -23,6 +23,20 @@ blocked_reason=""
 ready_count=0
 missing_count=0
 incomplete_count=0
+review_approved=true
+review_block_reason=""
+
+for smoke_stage in b_dynamic_smoke c_frozen_dp_smoke d_future_teacher_smoke; do
+  approval_file="$(mktemp)"
+  if ! RUN_GROUP= RUN_NAME= "${ROOT}/scripts/world_model/require_dataset_class_smoke_approved.sh" "${smoke_stage}" >"${approval_file}" 2>&1; then
+    review_approved=false
+    if [[ -z "${review_block_reason}" ]]; then
+      review_block_reason="$(sed -nE 's/^reason=([^[:space:]]+).*/\1/p' "${approval_file}" | tail -n 1)"
+      review_block_reason="${review_block_reason:-human_review_approval_missing}"
+    fi
+  fi
+  rm -f "${approval_file}"
+done
 
 json_number_field() {
   local summary="$1"
@@ -147,12 +161,20 @@ echo "[summary]"
 echo "  ready_count=${ready_count}"
 echo "  missing_count=${missing_count}"
 echo "  incomplete_count=${incomplete_count}"
+echo "  bcd_smoke_review_approved=${review_approved}"
 if [[ -n "${blocked_stage}" ]]; then
   echo "  next_shard_available=false"
   echo "  blocked_stage=${blocked_stage}"
   echo "  blocked_family=${blocked_family}"
   echo "  reason=${blocked_reason}"
   exit 70
+fi
+if [[ "${review_approved}" != "true" ]]; then
+  echo "  next_shard_available=false"
+  echo "  production_blocked=true"
+  echo "  reason=${review_block_reason:-human_review_approval_missing}"
+  echo "  approval_command=scripts/world_model/record_dataset_bcd_smoke_review_decision.sh --decision approved --reviewer <name> --notes <text>"
+  exit 0
 fi
 if [[ -n "${next_stage}" ]]; then
   echo "  next_shard_available=true"

@@ -21,13 +21,19 @@ MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-300}"
 SCENARIO="${SCENARIO:-constant_lr}"
 MOTION_START_STEP="${MOTION_START_STEP:-120}"
 MOTION_DURATION_STEPS="${MOTION_DURATION_STEPS:-150}"
-MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE:-peg_head_l2}"
-MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M:-0.12}"
+MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE:-pre_insert_l2}"
+MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M:-0.20}"
 MOTION_TRIGGER_MIN_STEP="${MOTION_TRIGGER_MIN_STEP:-0}"
+MIN_TRIGGER_TO_INSERT_STEPS="${MIN_TRIGGER_TO_INSERT_STEPS:-8}"
+MAX_ROLLOUT_ATTEMPTS="${MAX_ROLLOUT_ATTEMPTS:-0}"
 DELTA_X="${DELTA_X:-0.0}"
 DELTA_Y="${DELTA_Y:-0.20}"
 DELTA_Z="${DELTA_Z:-0.0}"
 MAX_STEP_DELTA_M="${MAX_STEP_DELTA_M:-0.004}"
+PEG_DISTURB_FORCE_X="${PEG_DISTURB_FORCE_X:-0.0}"
+PEG_DISTURB_FORCE_Y="${PEG_DISTURB_FORCE_Y:--25.0}"
+PEG_DISTURB_FORCE_Z="${PEG_DISTURB_FORCE_Z:-0.0}"
+PEG_DISTURB_DURATION_STEPS="${PEG_DISTURB_DURATION_STEPS:-18}"
 FPS="${FPS:-30}"
 CKPT_PATH="${CKPT_PATH:-${ROOT}/experiments/maniskill/dp_checkpoint/run_90201/checkpoints/best_eval_success_at_end.pt}"
 
@@ -77,7 +83,11 @@ MANIFEST="${OUTPUT_DIR}/manifest.txt"
   echo "motion_trigger_mode=${MOTION_TRIGGER_MODE}"
   echo "motion_trigger_threshold_m=${MOTION_TRIGGER_THRESHOLD_M}"
   echo "motion_trigger_min_step=${MOTION_TRIGGER_MIN_STEP}"
+  echo "min_trigger_to_insert_steps=${MIN_TRIGGER_TO_INSERT_STEPS}"
+  echo "max_rollout_attempts=${MAX_ROLLOUT_ATTEMPTS}"
   echo "motion_delta_xyz=${DELTA_X},${DELTA_Y},${DELTA_Z}"
+  echo "peg_disturb_force_xyz=${PEG_DISTURB_FORCE_X},${PEG_DISTURB_FORCE_Y},${PEG_DISTURB_FORCE_Z}"
+  echo "peg_disturb_duration_steps=${PEG_DISTURB_DURATION_STEPS}"
   echo "run_render_canary=${RUN_RENDER_CANARY}"
   echo "render_canary_timeout=${RENDER_CANARY_TIMEOUT}"
   echo "render_shader_pack=${RENDER_SHADER_PACK}"
@@ -85,7 +95,7 @@ MANIFEST="${OUTPUT_DIR}/manifest.txt"
   echo "fps=${FPS}"
   echo "dynamic_adapter=${ADAPTER}"
   echo "collector=${COLLECTOR}"
-  echo "notes=C frozen DP dynamic smoke only; failed chunks are negative/diagnostic, not positive BC; target motion must not begin during grasp/initial approach."
+  echo "notes=C frozen DP dynamic smoke only; success is recorded as a label, not rejected; failed chunks are negative/diagnostic, not positive BC; target motion must respect the configured trigger."
 } | tee "${MANIFEST}"
 
 "${ROOT}/scripts/world_model/dataset_dynamic_adapter_status.sh" | tee -a "${MANIFEST}"
@@ -118,11 +128,17 @@ echo "dataset_smoke_status=frozen_dp_dynamic_collection_in_progress" | tee -a "$
   --motion-trigger-mode "${MOTION_TRIGGER_MODE}" \
   --motion-trigger-threshold-m "${MOTION_TRIGGER_THRESHOLD_M}" \
   --motion-trigger-min-step "${MOTION_TRIGGER_MIN_STEP}" \
+  --min-trigger-to-insert-steps "${MIN_TRIGGER_TO_INSERT_STEPS}" \
+  --max-rollout-attempts "${MAX_ROLLOUT_ATTEMPTS}" \
   --motion-duration-steps "${MOTION_DURATION_STEPS}" \
   --delta-x "${DELTA_X}" \
   --delta-y "${DELTA_Y}" \
   --delta-z "${DELTA_Z}" \
   --max-step-delta-m "${MAX_STEP_DELTA_M}" \
+  --peg-disturb-force-x "${PEG_DISTURB_FORCE_X}" \
+  --peg-disturb-force-y "${PEG_DISTURB_FORCE_Y}" \
+  --peg-disturb-force-z "${PEG_DISTURB_FORCE_Z}" \
+  --peg-disturb-duration-steps "${PEG_DISTURB_DURATION_STEPS}" \
   --fps "${FPS}" \
   --dataset-smoke-only "${DATASET_SMOKE_ONLY}" \
   --human-review-required "${HUMAN_REVIEW_REQUIRED}" \

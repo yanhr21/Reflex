@@ -19,16 +19,25 @@ RENDER_CANARY_API="${RENDER_CANARY_API:-gym}"
 COUNT="${COUNT:-4}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-300}"
 EPISODE_START="${EPISODE_START:-0}"
+MAX_SOURCE_EPISODE_ATTEMPTS="${MAX_SOURCE_EPISODE_ATTEMPTS:-0}"
 SCENARIO="${SCENARIO:-constant_lr}"
 MOTION_START_STEP="${MOTION_START_STEP:-120}"
 MOTION_DURATION_STEPS="${MOTION_DURATION_STEPS:-150}"
-MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE:-peg_head_l2}"
-MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M:-0.12}"
+MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE:-pre_insert_l2}"
+MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M:-0.20}"
 MOTION_TRIGGER_MIN_STEP="${MOTION_TRIGGER_MIN_STEP:-0}"
+MIN_TRIGGER_TO_INSERT_STEPS="${MIN_TRIGGER_TO_INSERT_STEPS:-8}"
 DELTA_X="${DELTA_X:-0.0}"
 DELTA_Y="${DELTA_Y:-0.20}"
 DELTA_Z="${DELTA_Z:-0.0}"
 MAX_STEP_DELTA_M="${MAX_STEP_DELTA_M:-0.004}"
+FUTURE_TAU_STEPS="${FUTURE_TAU_STEPS:-12}"
+FUTURE_RESIDUAL_GAIN="${FUTURE_RESIDUAL_GAIN:-0.5}"
+MAX_FUTURE_RESIDUAL_M="${MAX_FUTURE_RESIDUAL_M:-0.03}"
+PEG_DISTURB_FORCE_X="${PEG_DISTURB_FORCE_X:-0.0}"
+PEG_DISTURB_FORCE_Y="${PEG_DISTURB_FORCE_Y:--25.0}"
+PEG_DISTURB_FORCE_Z="${PEG_DISTURB_FORCE_Z:-0.0}"
+PEG_DISTURB_DURATION_STEPS="${PEG_DISTURB_DURATION_STEPS:-18}"
 FPS="${FPS:-30}"
 
 MS_DIR="${ROOT}/deps/ManiSkill_clean"
@@ -61,7 +70,7 @@ MANIFEST="${OUTPUT_DIR}/manifest.txt"
   echo "output_dir=${OUTPUT_DIR}"
   echo "log_file=${LOG_FILE}"
   echo "source_paths=${ADAPTER},${DEMO_COLLECTOR},${SOURCE_H5},${SOURCE_JSON}"
-  echo "controller=official_demo_action_future_frame_teacher"
+  echo "controller=official_demo_action_gt_future_residual"
   echo "action_contract=pd_ee_delta_pose"
   echo "rgb_required=true"
   echo "human_review_required=${HUMAN_REVIEW_REQUIRED}"
@@ -75,13 +84,22 @@ MANIFEST="${OUTPUT_DIR}/manifest.txt"
   echo "scenario=${SCENARIO}"
   echo "num_rollouts=${COUNT}"
   echo "episode_start=${EPISODE_START}"
+  echo "max_source_episode_attempts=${MAX_SOURCE_EPISODE_ATTEMPTS}"
   echo "max_episode_steps=${MAX_EPISODE_STEPS}"
   echo "source_h5=${SOURCE_H5}"
   echo "source_json=${SOURCE_JSON}"
   echo "motion_trigger_mode=${MOTION_TRIGGER_MODE}"
   echo "motion_trigger_threshold_m=${MOTION_TRIGGER_THRESHOLD_M}"
   echo "motion_trigger_min_step=${MOTION_TRIGGER_MIN_STEP}"
+  echo "min_trigger_to_insert_steps=${MIN_TRIGGER_TO_INSERT_STEPS}"
   echo "motion_delta_xyz=${DELTA_X},${DELTA_Y},${DELTA_Z}"
+  echo "teacher_future_target_source=ground_truth_future_motion_plan"
+  echo "teacher_action_adapter=official_demo_actions_plus_gt_future_residual"
+  echo "future_tau_steps=${FUTURE_TAU_STEPS}"
+  echo "future_residual_gain=${FUTURE_RESIDUAL_GAIN}"
+  echo "max_future_residual_m=${MAX_FUTURE_RESIDUAL_M}"
+  echo "peg_disturb_force_xyz=${PEG_DISTURB_FORCE_X},${PEG_DISTURB_FORCE_Y},${PEG_DISTURB_FORCE_Z}"
+  echo "peg_disturb_duration_steps=${PEG_DISTURB_DURATION_STEPS}"
   echo "run_render_canary=${RUN_RENDER_CANARY}"
   echo "render_canary_timeout=${RENDER_CANARY_TIMEOUT}"
   echo "render_shader_pack=${RENDER_SHADER_PACK}"
@@ -89,7 +107,7 @@ MANIFEST="${OUTPUT_DIR}/manifest.txt"
   echo "fps=${FPS}"
   echo "dynamic_adapter=${ADAPTER}"
   echo "collector=${DEMO_COLLECTOR}"
-  echo "notes=D future-frame teacher smoke uses official demo actions plus dynamic target motion; teacher-only data generation."
+  echo "notes=D future-frame teacher smoke uses official demo actions plus a bounded ground-truth future target residual; teacher-only data generation."
 } | tee "${MANIFEST}"
 
 "${ROOT}/scripts/world_model/dataset_dynamic_adapter_status.sh" | tee -a "${MANIFEST}"
@@ -120,16 +138,25 @@ echo "dataset_smoke_status=future_teacher_collection_in_progress" | tee -a "${MA
   --scenario "${SCENARIO}" \
   --episode-start "${EPISODE_START}" \
   --num-episodes "${COUNT}" \
+  --max-source-episode-attempts "${MAX_SOURCE_EPISODE_ATTEMPTS}" \
   --max-episode-steps "${MAX_EPISODE_STEPS}" \
   --motion-start-step "${MOTION_START_STEP}" \
   --motion-trigger-mode "${MOTION_TRIGGER_MODE}" \
   --motion-trigger-threshold-m "${MOTION_TRIGGER_THRESHOLD_M}" \
   --motion-trigger-min-step "${MOTION_TRIGGER_MIN_STEP}" \
+  --min-trigger-to-insert-steps "${MIN_TRIGGER_TO_INSERT_STEPS}" \
   --motion-duration-steps "${MOTION_DURATION_STEPS}" \
   --delta-x "${DELTA_X}" \
   --delta-y "${DELTA_Y}" \
   --delta-z "${DELTA_Z}" \
   --max-step-delta-m "${MAX_STEP_DELTA_M}" \
+  --future-tau-steps "${FUTURE_TAU_STEPS}" \
+  --future-residual-gain "${FUTURE_RESIDUAL_GAIN}" \
+  --max-future-residual-m "${MAX_FUTURE_RESIDUAL_M}" \
+  --peg-disturb-force-x "${PEG_DISTURB_FORCE_X}" \
+  --peg-disturb-force-y "${PEG_DISTURB_FORCE_Y}" \
+  --peg-disturb-force-z "${PEG_DISTURB_FORCE_Z}" \
+  --peg-disturb-duration-steps "${PEG_DISTURB_DURATION_STEPS}" \
   --fps "${FPS}" \
   --dataset-smoke-only "${DATASET_SMOKE_ONLY}" \
   --human-review-required "${HUMAN_REVIEW_REQUIRED}" \

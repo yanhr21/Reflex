@@ -60,13 +60,13 @@ case "${DATASET_STAGE}" in
     ;;
 esac
 
-if ! "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh"; then
+if ! RUN_GROUP=static_rgb RUN_NAME=full01 "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh"; then
   echo "dataset_production_ready=false" >&2
   echo "reason=a_static_full_not_ready" >&2
   exit 61
 fi
 
-if ! "${ROOT}/scripts/world_model/require_dataset_class_smoke_approved.sh" "${SMOKE_STAGE}"; then
+if ! RUN_GROUP= RUN_NAME= "${ROOT}/scripts/world_model/require_dataset_class_smoke_approved.sh" "${SMOKE_STAGE}"; then
   echo "dataset_production_ready=false" >&2
   echo "reason=class_smoke_not_approved" >&2
   echo "smoke_stage=${SMOKE_STAGE}" >&2
@@ -99,9 +99,15 @@ COUNT="${COUNT:-${DEFAULT_COUNT}}"
 STEPS_PER_EPISODE="${STEPS_PER_EPISODE:-${DEFAULT_STEPS_PER_EPISODE}}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-${DEFAULT_MAX_EPISODE_STEPS}}"
 NUM_ENVS="${NUM_ENVS:-1}"
+MAX_SOURCE_EPISODE_ATTEMPTS="${MAX_SOURCE_EPISODE_ATTEMPTS:-0}"
+MAX_ROLLOUT_ATTEMPTS="${MAX_ROLLOUT_ATTEMPTS:-0}"
 SCENARIO="${SCENARIO:-constant_lr}"
 MOTION_START_STEP="${MOTION_START_STEP:-20}"
 MOTION_DURATION_STEPS="${MOTION_DURATION_STEPS:-40}"
+MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE:-pre_insert_l2}"
+MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M:-0.20}"
+MOTION_TRIGGER_MIN_STEP="${MOTION_TRIGGER_MIN_STEP:-0}"
+MIN_TRIGGER_TO_INSERT_STEPS="${MIN_TRIGGER_TO_INSERT_STEPS:-8}"
 DELTA_X="${DELTA_X:-0.0}"
 DELTA_Y="${DELTA_Y:-0.08}"
 DELTA_Z="${DELTA_Z:-0.0}"
@@ -120,7 +126,7 @@ FPS="${FPS:-30}"
 DATASET_SMOKE_ONLY="${DATASET_SMOKE_ONLY:-false}"
 HUMAN_REVIEW_REQUIRED="${HUMAN_REVIEW_REQUIRED:-false}"
 LARGE_SCALE_PRODUCTION_ALLOWED="${LARGE_SCALE_PRODUCTION_ALLOWED:-true}"
-EXCLUDE_NODES="${EXCLUDE_NODES:-server10,server28,server30,server34,server35,server36,server39,server43,server44,server46,server53,server56,server57,server58,server59,server60,server63}"
+EXCLUDE_NODES="${EXCLUDE_NODES:-server02,server07,server10,server28,server30,server34,server35,server36,server39,server43,server44,server46,server53,server56,server57,server58,server59,server60,server63}"
 NODELIST="${NODELIST:-}"
 
 if [[ "${RUN_GROUP}" =~ p03_|full_pipeline|[0-9]{8}|server[0-9]+|job[0-9]+ ]]; then
@@ -181,9 +187,15 @@ export COUNT="${COUNT}"
 export STEPS_PER_EPISODE="${STEPS_PER_EPISODE}"
 export MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS}"
 export NUM_ENVS="${NUM_ENVS}"
+export MAX_SOURCE_EPISODE_ATTEMPTS="${MAX_SOURCE_EPISODE_ATTEMPTS}"
+export MAX_ROLLOUT_ATTEMPTS="${MAX_ROLLOUT_ATTEMPTS}"
 export SCENARIO="${SCENARIO}"
 export MOTION_START_STEP="${MOTION_START_STEP}"
 export MOTION_DURATION_STEPS="${MOTION_DURATION_STEPS}"
+export MOTION_TRIGGER_MODE="${MOTION_TRIGGER_MODE}"
+export MOTION_TRIGGER_THRESHOLD_M="${MOTION_TRIGGER_THRESHOLD_M}"
+export MOTION_TRIGGER_MIN_STEP="${MOTION_TRIGGER_MIN_STEP}"
+export MIN_TRIGGER_TO_INSERT_STEPS="${MIN_TRIGGER_TO_INSERT_STEPS}"
 export DELTA_X="${DELTA_X}"
 export DELTA_Y="${DELTA_Y}"
 export DELTA_Z="${DELTA_Z}"
@@ -220,9 +232,15 @@ echo "time_limit=${TIME_LIMIT}" | tee -a "${LOG_FILE}"
 echo "count=${COUNT}" | tee -a "${LOG_FILE}"
 echo "steps_per_episode=${STEPS_PER_EPISODE}" | tee -a "${LOG_FILE}"
 echo "max_episode_steps=${MAX_EPISODE_STEPS}" | tee -a "${LOG_FILE}"
+echo "max_source_episode_attempts=${MAX_SOURCE_EPISODE_ATTEMPTS}" | tee -a "${LOG_FILE}"
+echo "max_rollout_attempts=${MAX_ROLLOUT_ATTEMPTS}" | tee -a "${LOG_FILE}"
 echo "scenario=${SCENARIO}" | tee -a "${LOG_FILE}"
 echo "motion_start_step=${MOTION_START_STEP}" | tee -a "${LOG_FILE}"
 echo "motion_duration_steps=${MOTION_DURATION_STEPS}" | tee -a "${LOG_FILE}"
+echo "motion_trigger_mode=${MOTION_TRIGGER_MODE}" | tee -a "${LOG_FILE}"
+echo "motion_trigger_threshold_m=${MOTION_TRIGGER_THRESHOLD_M}" | tee -a "${LOG_FILE}"
+echo "motion_trigger_min_step=${MOTION_TRIGGER_MIN_STEP}" | tee -a "${LOG_FILE}"
+echo "min_trigger_to_insert_steps=${MIN_TRIGGER_TO_INSERT_STEPS}" | tee -a "${LOG_FILE}"
 echo "delta_x=${DELTA_X}" | tee -a "${LOG_FILE}"
 echo "delta_y=${DELTA_Y}" | tee -a "${LOG_FILE}"
 echo "delta_z=${DELTA_Z}" | tee -a "${LOG_FILE}"

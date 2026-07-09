@@ -32,7 +32,7 @@ rm -f "${gate_file}"
 case "${STAGE}" in
   b_dynamic_smoke|c_frozen_dp_smoke|d_future_teacher_smoke|e_cosmos_predicted_smoke)
     static_full_file="$(mktemp)"
-    if ! "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh" >"${static_full_file}" 2>&1; then
+    if ! RUN_GROUP=static_rgb RUN_NAME=full01 "${ROOT}/scripts/world_model/require_dataset_static_full_ready.sh" >"${static_full_file}" 2>&1; then
       echo "dataset_stage_ready=false"
       echo "stage=${STAGE}"
       echo "reason=a_static_full_not_ready"

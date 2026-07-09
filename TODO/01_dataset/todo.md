@@ -140,15 +140,23 @@
   `scripts/slurm/run_dataset_future_frame_teacher_smoke_in_allocation.sh`.
 - [x] Add `server34` to B/C/D/E smoke and production default node exclusions
   after C render-canary `ErrorDeviceLost` evidence on job `171273`.
-- [ ] Regenerate C and D again after the task-motion fixes and updated smoke
-  exclusions. Active pending jobs: C `171281`, estimated start
-  `2026-07-08T18:46:52` on `server57`; D `171280`, estimated start
-  `2026-07-08T18:38:54` on `server27`. Both use `1 GPU / 1 CPU / 8G /
-  00:30:00`, 30 FPS, and exclude
-  `server28,server34,server36,server39,server43,server44,server46,server53,server58,server60,server63`.
-  Do not create a new approval batch and do not start B/C/D production until
-  B/C/D all have complete 300-frame, 30 FPS, visually inspected smoke
-  artifacts.
+- [x] Regenerate C and D again after the task-motion fixes and updated smoke
+  exclusions. The stale pending jobs `171280` / `171281` were replaced after
+  inspection. The successful active C smoke is job `172081` on `server10`:
+  300 frames, 30 FPS, `success_once=false`, `success_at_end=false`,
+  `state_intervention=false`, `snap_or_teleport=false`,
+  `target_assisted=false`, and `task_motion_quality_gate_passed=true`. The
+  successful active D smoke is job `172058` on `server27`: 4 videos, 1200
+  total frames, 30 FPS, `teacher_future_target_source=ground_truth_future_motion_plan`,
+  `teacher_action_adapter=official_demo_actions_plus_gt_future_residual`,
+  `state_intervention=false`, `snap_or_teleport=false`, and
+  `task_motion_quality_gate_passed=true`. The failed `server07` render-canary
+  attempt was archived under
+  `experiments/legacy/01_dataset/invalid_cd_smoke_20260708_server07_canary_timeout/`.
+  The new B/C/D review batch is
+  `experiments/maniskill/runs/01_dataset/review/bcd_smoke_review_20260708.md`.
+  Do not start B/C/D production until explicit human review approval is
+  recorded.
 - [x] Add B/C/D batch review decision helper:
   `scripts/world_model/record_dataset_bcd_smoke_review_decision.sh`. It must
   be used for approval only after explicit user approval; `--dry-run` is safe
@@ -195,6 +203,143 @@
   `scripts/slurm/launch_dataset_bcd_next_production_shard_tmux.sh`. It
   refuses to launch before B/C/D human-review approval and submits at most one
   production shard after approval.
+- [x] Regenerate the requested multi-motion B/C/D smoke matrix after user
+  review rejected the single-family batch. The completed matrix covers
+  `lr_pos`, `lr_neg`, `fb_pos`, `fb_neg`, `reverse`, `sine`, and
+  `peg_disturb` for B/C/D. B has 14 videos / 4200 frames, C has 7 videos /
+  2100 frames with `motion_trigger_mode=inserted`, and D has 14 videos /
+  4200 frames with teacher-only ground-truth future residual labels. All
+  manifests validate, `state_intervention=false`, and `snap_or_teleport=false`.
+  Success/failure is recorded as a label only, especially for C. Review file:
+  `experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260708.md`.
+  This matrix was later rejected and archived because C timing was wrong.
+- [x] Reject and archive the 2026-07-08 multi-motion matrix after user visual
+  review found the C timing wrong: C used `motion_trigger_mode=inserted`, so
+  target/hole motion could begin only after insertion. That is not the desired
+  replanning setting. The invalid matrix is archived under
+  `experiments/legacy/01_dataset/20260709_bcd_matrix_invalid_c_trigger_after_insertion/`
+  with logs under
+  `logs/legacy/01_dataset/20260709_bcd_matrix_invalid_c_trigger_after_insertion/`.
+- [x] Regenerate the B/C/D multi-motion smoke matrix with corrected C timing.
+  C now uses `motion_trigger_mode=pre_insert_l2` and
+  `motion_trigger_threshold_m=0.12`, so motion triggers only when the peg is
+  near the hole and `inserted=false`. The C audit shows all seven families
+  trigger before insertion: `lr_pos`, `lr_neg`, `fb_pos`, `fb_neg`, `reverse`,
+  `sine`, and `peg_disturb`. Success/failure is recorded only as a label; C is
+  not rejected merely because frozen DP still succeeds after a pre-insertion
+  disturbance. Corrected review file:
+  `experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert.md`.
+  This review gate was later cleared by explicit user approval on 2026-07-09.
+- [x] Record explicit user approval for the corrected B/C/D smoke matrix and
+  launch ABCD full production on 2026-07-09. A static RGB is already complete:
+  20 shards, 1000 videos, 480 review frames, 30 FPS. B/C/D production was
+  launched as 18 tmux-held Slurm shards under `prod01/<family>`:
+  B target 1000 episodes, C target 500 rollouts, and D target 500 teacher
+  rollouts. C success/failure remains only an outcome label, not a production
+  blocker.
+- [x] Archive and relaunch early production parameter/node failures without
+  treating C success as invalid. B `reverse` / `stop` and C `reverse` first
+  failed because `MAX_STEP_DELTA_M=0.004` was too tight for those continuous
+  motion profiles; the failed attempts were archived under
+  `experiments/legacy/01_dataset/20260709_b_reverse_stop_step_delta_too_tight/`
+  and
+  `experiments/legacy/01_dataset/20260709_c_reverse_step_delta_too_tight/`.
+  C `stop` then failed render canary on `server07`; pending jobs were requeued
+  after adding `server07` to the production exclude list, with archive record
+  `experiments/legacy/01_dataset/20260709_requeue_pending_after_server07_canary_timeout/`.
+  Relaunched `reverse` / `stop` shards use `MAX_STEP_DELTA_M=0.0045`.
+- [x] Fix and relaunch C production after discovering the first production
+  shards were not using the approved corrected C semantics. C production now
+  defaults to `motion_trigger_mode=pre_insert_l2`, matching the approved
+  2026-07-09 smoke matrix where target motion begins before insertion when
+  `peg_head_l2 <= 0.12` and `inserted=false`. The C collector now separates
+  rollout attempts from accepted rollouts: attempts that never reach the
+  pre-insertion trigger or fail the task-motion quality gate are recorded as
+  `skipped_attempts` and do not pollute accepted action / motion / task traces
+  or videos. This does not reject C success; success remains an outcome label.
+  The old C production shards launched with the wrong trigger / aborting
+  collector were archived under
+  `experiments/legacy/01_dataset/20260709_c_prod_old_trigger_and_abort_collector/`.
+  The one-second C `lr` shell-manifest typo attempt was archived under
+  `experiments/legacy/01_dataset/20260709_c_lr_shell_manifest_typo/`.
+  C `lr`, `fb`, `reverse`, `stop`, `sine`, and `cont` were relaunched under
+  active `frozen_dp_dynamic/prod01/<family>` with
+  `MAX_STEP_DELTA_M=0.0045`; `fb` has already passed render canary and entered
+  collection, and the remaining C shards are queued or running as tmux-held
+  Slurm jobs.
+- [x] Archive and relaunch D `reverse` / `stop` production failures. D
+  `reverse` failed render canary on `server02`, so `server02` was added to
+  the production default exclude list alongside `server07`; D `stop` failed
+  because `MAX_STEP_DELTA_M=0.0045` was still too tight for the teacher
+  residual path. Both old attempts were archived under
+  `experiments/legacy/01_dataset/20260709_d_reverse_stop_canary_step_delta_requeue/`.
+  D `reverse` and `stop` were relaunched with `MAX_STEP_DELTA_M=0.005` and
+  the updated node exclusions.
+- [x] Archive and relaunch B `reverse` / `stop` production failures from the
+  same production pass. B `reverse` failed render canary on `server02`, and B
+  `stop` failed the continuous-motion validation with
+  `0.004592m > 0.004500m`. Both old attempts were archived under
+  `experiments/legacy/01_dataset/20260709_b_reverse_stop_canary_step_delta_requeue/`.
+  B `reverse` and `stop` were relaunched with `MAX_STEP_DELTA_M=0.005` and
+  the updated production exclude list.
+- [x] Fix B/D demo-action production collector after B `lr`, `fb`, `cont`,
+  and `sine` all hit the same non-triggering source demo episode (`source
+  episode 130`). The collector now separates source attempts from accepted
+  episodes and records skipped source episodes when a source demo never
+  reaches the configured motion trigger or fails the task-motion quality gate.
+  Skipped source episodes do not enter accepted trace rows, accepted videos,
+  or the production count. This preserves B as dynamic observation data and
+  D as teacher-only data without treating an unhelpful source episode as a
+  shard-wide failure. The old B failed/interrupted attempts were archived
+  under
+  `experiments/legacy/01_dataset/20260709_b_prod_source_episode_skip_requeue/`.
+  B `lr`, `fb`, `reverse`, `stop`, `sine`, and `cont` were relaunched with
+  `MAX_STEP_DELTA_M=0.005`; `lr` had one transient shell-manifest typo
+  attempt archived under
+  `experiments/legacy/01_dataset/20260709_b_lr_shell_manifest_typo/` and was
+  relaunched again.
+- [x] Archive and relaunch C `stop` after `MAX_STEP_DELTA_M=0.0045` still
+  failed the continuous-motion validation (`0.004592m > 0.004500m`). The old
+  failed attempt is archived under
+  `experiments/legacy/01_dataset/20260709_c_stop_step_delta_0045_too_tight/`;
+  the active C `stop` shard was relaunched with `MAX_STEP_DELTA_M=0.005`.
+- [x] Stop and archive the 2026-07-09 B/C/D dynamic production pass after
+  user video review found that C still moved the target/hole too late:
+  although `pre_insert_l2` required `inserted=false` at the trigger check, it
+  did not require any lead time before the first inserted frame, so a sample
+  could still have first motion on the same step as insertion. That is the
+  wrong task setting; dynamic target/hole motion must begin before insertion
+  while the peg is aligned/approaching the hole so replanning is meaningful.
+  The running/pending B/C/D Slurm jobs were canceled, all active B/C/D smoke
+  approvals and production shards were moved under
+  `experiments/legacy/01_dataset/20260709_bad_dynamic_trigger_after_insertion_redo/`,
+  and the active approval gate now points to a new review file
+  `experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert_lead8.md`.
+  C success/failure remains an outcome label only; success is not rejected.
+- [x] Add an explicit pre-insertion timing quality gate to B/C/D collectors.
+  Accepted dynamic samples now record `first_motion_step`,
+  `first_inserted_step`, `trigger_to_insert_steps`, and
+  `min_trigger_to_insert_steps`. With the active default
+  `min_trigger_to_insert_steps=8`, any sample whose target/hole motion starts
+  too close to, on, or after the first inserted step is skipped and cannot
+  enter accepted videos/traces. B/C/D runners and smoke/production launchers
+  now default to `motion_trigger_mode=pre_insert_l2`,
+  `motion_trigger_threshold_m=0.20`, and `min_trigger_to_insert_steps=8`.
+- [x] Regenerate the full B/C/D smoke matrix from scratch under the new
+  `preinsert_lead8` gate. The active matrix has 21 summaries and 35 videos:
+  B has 14 videos, C has 7 videos, and D has 14 videos. Structure validation
+  passed for `status=smoke_complete`, `motion_trigger_mode=pre_insert_l2`,
+  `motion_trigger_threshold_m=0.20`, `min_trigger_to_insert_steps=8`,
+  `state_intervention=false`, and `snap_or_teleport=false`. Any accepted
+  sample with an inserted frame has `trigger_to_insert_steps >= 8`; accepted
+  samples with `trigger_to_insert_steps=null` did not contain an inserted
+  frame, so they are not post-insertion motion. Review file:
+  `experiments/maniskill/runs/01_dataset/review/bcd_smoke_matrix_review_20260709_preinsert_lead8.md`.
+- [ ] Wait for user visual review of the new `preinsert_lead8` B/C/D smoke
+  matrix before approving or relaunching B/C/D production. Current
+  `dataset_bcd_review_block_status.sh` reports `goal_blocked=true` with
+  `reason=human_review_approval_missing`; production must remain blocked
+  until explicit approval.
 
 ## Immediate Documentation / Design
 

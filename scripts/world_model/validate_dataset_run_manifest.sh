@@ -170,16 +170,26 @@ else
   echo "dataset_smoke_only=false_or_missing"
 fi
 
-if [[ -d "${RUN_DIR}/videos" ]]; then
-  video_count="$({ find "${RUN_DIR}/videos" -maxdepth 1 -type f -name '*.mp4' 2>/dev/null || true; } | wc -l | tr -d ' ')"
-else
-  video_count="$({ find "${RUN_DIR}" -maxdepth 1 -type f -name '*.mp4' 2>/dev/null || true; } | wc -l | tr -d ' ')"
-fi
-if [[ -d "${RUN_DIR}/review/frames" ]]; then
-  frame_count="$({ find "${RUN_DIR}/review/frames" -maxdepth 1 -type f -name '*.png' 2>/dev/null || true; } | wc -l | tr -d ' ')"
-else
-  frame_count=0
-fi
+video_count=0
+frame_count=0
+for artifact_count_attempt in 1 2 3 4 5; do
+  if [[ -d "${RUN_DIR}/videos" ]]; then
+    video_count="$({ find "${RUN_DIR}/videos" -maxdepth 1 -type f -name '*.mp4' 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  else
+    video_count="$({ find "${RUN_DIR}" -maxdepth 1 -type f -name '*.mp4' 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  fi
+  if [[ -d "${RUN_DIR}/review/frames" ]]; then
+    frame_count="$({ find "${RUN_DIR}/review/frames" -maxdepth 1 -type f -name '*.png' 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  else
+    frame_count=0
+  fi
+  if [[ "${video_count}" -ne 0 && "${frame_count}" -ne 0 ]]; then
+    break
+  fi
+  # NFS metadata can briefly report an empty directory during concurrent
+  # artifact inspection. Recount a few times before declaring evidence absent.
+  sleep 1
+done
 echo "video_count=${video_count}"
 echo "review_frame_count=${frame_count}"
 if [[ "${video_count}" -eq 0 || "${frame_count}" -eq 0 ]]; then
