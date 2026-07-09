@@ -70,6 +70,8 @@ def main() -> int:
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--sort", choices=["name", "size-desc"], default="name")
+    parser.add_argument("--min-size", type=int, default=0)
+    parser.add_argument("--max-size", type=int, default=None)
     parser.add_argument(
         "--exclude-part",
         action="append",
@@ -88,6 +90,9 @@ def main() -> int:
 
     done = load_done_many([args.log, *args.extra_done_log])
     files = iter_files(root, set(args.exclude_part))
+    files = [path for path in files if path.stat().st_size >= args.min_size]
+    if args.max_size is not None:
+        files = [path for path in files if path.stat().st_size <= args.max_size]
     if args.sort == "size-desc":
         files.sort(key=lambda path: (-path.stat().st_size, str(path.relative_to(root))))
     files = [path for idx, path in enumerate(files) if idx % args.shard_count == args.shard_index]
